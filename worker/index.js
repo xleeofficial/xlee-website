@@ -192,12 +192,43 @@ async function runPageSpeed(url, key) {
   endpoint.searchParams.set("strategy", "mobile");
   endpoint.searchParams.set("category", "performance");
   endpoint.searchParams.set("key", key);
-  const response = await fetch(endpoint.href, { signal: AbortSignal.timeout(25_000) });
-  if (!response.ok) return { available: false, reason: "PageSpeed API returned HTTP " + response.status };
-  const data = await response.json();
-  const audits = data.lighthouseResult?.audits || {};
-  const score = data.lighthouseResult?.categories?.performance?.score;
-  const pick = id => { const a = audits[id]; return a ? { title: a.title, displayValue: a.displayValue || "", score: a.score, numericValue: a.numericValue ?? null } : null; };
+  let response;
+  try { response = await fetch(endpoint.href, { signal: AbortSignal.timeout(25_000) }); }
+  catch { return { available: false, reason: "PageSpeed service temporarily unavailable" }; }
+  if (!response.ok) return { available: false, reason: "PageSpeed service temporarily unavailable" };
+  let text;
+  try {
+    const reader = response.body?.getReader();
+    if (!reader) return { available: false, reason: "PageSpeed service returned an invalid response" };
+    const chunks = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > 1_000_000) { await reader.cancel(); return { available: false, reason: "PageSpeed response exceeded the size limit" }; }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    text = new TextDecoder().decode(bytes);
+  } catch { return { available: false, reason: "PageSpeed service returned an invalid response" }; }
+  let data;
+  try { data = JSON.parse(text); } catch { return { available: false, reason: "PageSpeed service returned an invalid response" }; }
+  const audits = data?.lighthouseResult?.audits || {};
+  const score = data?.lighthouseResult?.categories?.performance?.score;
+  const boundedText = (value, max) => typeof value === "string" ? value.slice(0, max) : "";
+  const pick = id => {
+    const audit = audits[id];
+    if (!audit || typeof audit !== "object") return null;
+    return {
+      title: boundedText(audit.title, 160),
+      displayValue: boundedText(audit.displayValue, 120),
+      score: Number.isFinite(audit.score) ? audit.score : null,
+      numericValue: Number.isFinite(audit.numericValue) ? audit.numericValue : null
+    };
+  };
   return { available: true, strategy: "mobile", score: typeof score === "number" ? Math.round(score * 100) : null, metrics: { lcp: pick("largest-contentful-paint"), cls: pick("cumulative-layout-shift"), inp: pick("interaction-to-next-paint"), fcp: pick("first-contentful-paint"), tbt: pick("total-blocking-time"), speedIndex: pick("speed-index") }, fetchedAt: new Date().toISOString() };
 }
 
