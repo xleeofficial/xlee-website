@@ -2,6 +2,8 @@ const ALLOWED_ORIGINS = new Set(["https://xlee.uk", "https://www.xlee.uk"]);
 const MAX_URL_LENGTH = 2048;
 const MAX_HTML_BYTES = 1_500_000;
 const TIMEOUT_MS = 12_000;
+const MAX_REQUEST_BYTES = 4096;
+const TURNSTILE_TIMEOUT_MS = 5000;
 
 function json(data, status = 200, origin = "") {
   const headers = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "vary": "Origin" };
@@ -20,7 +22,7 @@ function validatePublicUrl(raw) {
   if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Only HTTP and HTTPS URLs are supported.");
   if (url.username || url.password) throw new Error("URLs containing credentials are not allowed.");
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (!host.includes(".") || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) throw new Error("Use a public website hostname.");
+  if (!host.includes(".") || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".test") || host.endsWith(".invalid") || host.endsWith(".onion") || host.endsWith(".example")) throw new Error("Use a public website hostname.");
   // Reject IP literals, including IPv6 literals. Public-domain DNS resolution is still enforced by the Worker network.
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":") || /^0x[0-9a-f]+$/i.test(host)) throw new Error("IP-address URLs are not allowed; use a public domain.");
   if (!/^[a-z0-9.-]+$/.test(host) || host.startsWith(".") || host.endsWith(".") || host.includes("..")) throw new Error("Use a valid public hostname.");
@@ -121,6 +123,45 @@ function inspectHtml(html, finalUrl) {
   return { page: { url: finalUrl, title, description, h1Count: h1s, imageCount: images.length }, checks: { viewport: !!viewport, title: !!title, description: !!description, h1Count: h1s, imagesMissingAlt: missingAlt, jsonLdFound: jsonLd, noindex: /\bnoindex\b/i.test(robots) }, issues, note: { ar: "فحص HTML أولي فقط؛ لا يمثل تدقيقًا شاملًا أو ضمانًا لترتيب البحث أو المبيعات.", en: "Preliminary HTML check only; not a comprehensive audit or a guarantee of search rankings or sales." } };
 }
 
+
+async function verifyTurnstile(token, request, secret) {
+  if (!secret) throw new Error("Service is not configured for bot protection.");
+  if (typeof token !== "string" || token.length < 10 || token.length > 2048) throw new Error("Complete the anti-bot verification and try again.");
+  const form = new FormData();
+  form.set("secret", secret);
+  form.set("response", token);
+  const ip = request.headers.get("CF-Connecting-IP");
+  if (ip) form.set("remoteip", ip);
+  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST", body: form, signal: AbortSignal.timeout(TURNSTILE_TIMEOUT_MS)
+  });
+  if (!response.ok) throw new Error("Anti-bot verification is temporarily unavailable.");
+  const result = await response.json();
+  if (!result.success) throw new Error("Anti-bot verification failed. Refresh the challenge and try again.");
+}
+async function readJsonLimited(request) {
+  const declared = Number(request.headers.get("content-length") || 0);
+  if (declared > MAX_REQUEST_BYTES) throw new Error("Request body too large.");
+  if (!request.body) throw new Error("Request body is empty.");
+  const reader = request.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_REQUEST_BYTES) { await reader.cancel(); throw new Error("Request body too large."); }
+      chunks.push(value);
+    }
+  } finally { try { reader.releaseLock(); } catch {} }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  try { return JSON.parse(new TextDecoder().decode(bytes)); }
+  catch { throw new Error("Invalid JSON body."); }
+}
+
 async function runPageSpeed(url, key) {
   if (!key) return { available: false, reason: "PAGESPEED_API_KEY is not configured" };
   const endpoint = new URL("https://www.googleapis.com/pagespeedonline/v5/runPagespeed");
@@ -148,10 +189,11 @@ export default {
     if (origin && !ALLOWED_ORIGINS.has(origin)) return json({ error: "Origin not allowed" }, 403);
     const contentType = request.headers.get("content-type") || "";
     if (!contentType.toLowerCase().includes("application/json")) return json({ error: "Content-Type must be application/json" }, 415, origin);
-    const length = Number(request.headers.get("content-length") || 0);
-    if (length > 4096) return json({ error: "Request body too large" }, 413, origin);
     let body;
-    try { body = await request.json(); } catch { return json({ error: "Invalid JSON body" }, 400, origin); }
+    try { body = await readJsonLimited(request); }
+    catch (error) { return json({ error: error.message }, /too large/i.test(error.message) ? 413 : 400, origin); }
+    try { await verifyTurnstile(body.turnstileToken, request, env.TURNSTILE_SECRET_KEY); }
+    catch (error) { return json({ error: error.message }, 403, origin); }
     let url;
     try { url = validatePublicUrl(body.url); } catch (error) { return json({ error: error.message }, 400, origin); }
     try {
