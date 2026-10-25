@@ -29,7 +29,7 @@ function turnstileResponse() {
 function proxyResponse(overrides = {}) {
   return new Response(JSON.stringify({
     html: "<!doctype html><html><head><title>Product page title that is long enough</title><meta name=\"description\" content=\"Product details\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"></head><body><h1>Product</h1></body></html>",
-    finalUrl: "https://shop.example/product",
+    finalUrl: "https://shop.example.com/product",
     status: 200,
     ...overrides
   }), {
@@ -63,7 +63,7 @@ test("scan fails closed when the trusted egress proxy is not configured", async 
   };
   try {
     const response = await worker.fetch(
-      request("https://worker.example/api/scan", { url: "https://shop.example/product", turnstileToken: TOKEN }),
+      request("https://worker.example/api/scan", { url: "https://shop.example.com/product", turnstileToken: TOKEN }),
       { TURNSTILE_SECRET_KEY: SECRET }
     );
     assert.equal(response.status, 422);
@@ -104,7 +104,7 @@ test("rejects URL credentials and non-HTTP schemes before proxy fetch", async ()
     throw new Error("Proxy must not be called");
   };
   try {
-    for (const url of ["https://user:pass@shop.example/", "file:///etc/passwd"]) {
+    for (const url of ["https://user:pass@shop.example.com/", "file:///etc/passwd"]) {
       const response = await worker.fetch(
         request("https://worker.example/api/scan", { url, turnstileToken: TOKEN }),
         env()
@@ -128,20 +128,20 @@ test("sends the target only to the authenticated trusted proxy and returns a bou
   };
   try {
     const response = await worker.fetch(
-      request("https://worker.example/api/scan", { url: "https://shop.example/product", turnstileToken: TOKEN }),
+      request("https://worker.example/api/scan", { url: "https://shop.example.com/product", turnstileToken: TOKEN }),
       env()
     );
     assert.equal(response.status, 200);
     const result = await response.json();
     assert.equal(result.ok, true);
-    assert.equal(result.report.page.url, "https://shop.example/product");
+    assert.equal(result.report.page.url, "https://shop.example.com/product");
     assert.equal(result.report.checks.viewport, true);
     assert.equal(result.report.performance.available, false);
     const proxyCall = calls.find(call => call.url === "https://egress.example/fetch");
     assert.ok(proxyCall);
     assert.equal(proxyCall.options.headers.authorization, "Bearer " + PROXY_TOKEN);
     const payload = JSON.parse(proxyCall.options.body);
-    assert.equal(payload.url, "https://shop.example/product");
+    assert.equal(payload.url, "https://shop.example.com/product");
     assert.equal(payload.maxBytes, 1_500_000);
     assert.equal(payload.maxRedirects, 3);
     assert.equal(payload.timeoutMs, 12_000);
@@ -157,7 +157,7 @@ test("rejects a proxy response whose final URL is a private IP literal", async (
     : proxyResponse({ finalUrl: "http://192.168.1.1/admin" });
   try {
     const response = await worker.fetch(
-      request("https://worker.example/api/scan", { url: "https://shop.example/product", turnstileToken: TOKEN }),
+      request("https://worker.example/api/scan", { url: "https://shop.example.com/product", turnstileToken: TOKEN }),
       env()
     );
     assert.equal(response.status, 422);
