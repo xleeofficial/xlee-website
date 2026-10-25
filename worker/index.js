@@ -30,51 +30,61 @@ function validatePublicUrl(raw) {
   return url;
 }
 
-async function fetchPublicHtml(initialUrl) {
-  let url = initialUrl;
-  for (let hop = 0; hop < 4; hop++) {
-    validatePublicUrl(url.href);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    let response;
-    try {
-      response = await fetch(url.href, {
-        method: "GET",
-        redirect: "manual",
-        signal: controller.signal,
-        headers: { "user-agent": "XLEE-Lens/0.1 (+https://xlee.uk)", "accept": "text/html,application/xhtml+xml;q=0.9" }
-      });
-    } finally { clearTimeout(timer); }
-    if ([301, 302, 303, 307, 308].includes(response.status)) {
-      const location = response.headers.get("location");
-      if (!location || hop === 3) throw new Error("Too many redirects or invalid redirect target.");
-      url = new URL(location, url);
-      continue;
-    }
-    if (!response.ok) throw new Error("The target page returned HTTP " + response.status + ".");
-    const type = (response.headers.get("content-type") || "").toLowerCase();
-    if (!type.includes("text/html") && !type.includes("application/xhtml+xml")) throw new Error("The URL does not appear to return an HTML page.");
-    const declaredLength = Number(response.headers.get("content-length") || 0);
-    if (declaredLength > MAX_HTML_BYTES) throw new Error("The page is too large to inspect safely.");
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error("The page returned no readable content.");
-    const chunks = [];
-    let total = 0;
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        total += value.byteLength;
-        if (total > MAX_HTML_BYTES) { await reader.cancel(); throw new Error("The page is too large to inspect safely."); }
-        chunks.push(value);
-      }
-    } finally { reader.releaseLock(); }
-    const merged = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) { merged.set(chunk, offset); offset += chunk.byteLength; }
-    return { html: new TextDecoder("utf-8").decode(merged), finalUrl: url.href, status: response.status };
+async function fetchPublicHtml(initialUrl, env) {
+  // Fail closed: direct arbitrary-host fetches are disabled. The trusted egress proxy
+  // must resolve DNS and block private/reserved IPs on every redirect hop.
+  if (!env.SAFE_FETCH_PROXY_URL || !env.SAFE_FETCH_PROXY_TOKEN) {
+    throw new Error("Secure page-fetch service is not configured yet.");
   }
-  throw new Error("Could not safely follow the page redirects.");
+  let proxyUrl;
+  try { proxyUrl = new URL(env.SAFE_FETCH_PROXY_URL); } catch { throw new Error("Secure page-fetch service configuration is invalid."); }
+  if (proxyUrl.protocol !== "https:" || proxyUrl.username || proxyUrl.password) {
+    throw new Error("Secure page-fetch service must use HTTPS and contain no URL credentials.");
+  }
+  validatePublicUrl(initialUrl.href);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(proxyUrl.href, {
+      method: "POST",
+      redirect: "error",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        "authorization": "Bearer " + env.SAFE_FETCH_PROXY_TOKEN,
+        "accept": "application/json"
+      },
+      body: JSON.stringify({ url: initialUrl.href, maxBytes: MAX_HTML_BYTES, maxRedirects: 3, timeoutMs: TIMEOUT_MS })
+    });
+  } finally { clearTimeout(timer); }
+  if (!response.ok) throw new Error("Secure page-fetch service returned HTTP " + response.status + ".");
+  const type = (response.headers.get("content-type") || "").toLowerCase();
+  if (!type.includes("application/json")) throw new Error("Secure page-fetch service returned an unexpected response type.");
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Secure page-fetch service returned an empty response.");
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_HTML_BYTES + 8192) { await reader.cancel(); throw new Error("Secure page-fetch response is too large."); }
+      chunks.push(value);
+    }
+  } finally { try { reader.releaseLock(); } catch {} }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  let result;
+  try { result = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new Error("Secure page-fetch service returned invalid JSON."); }
+  if (typeof result.html !== "string" || result.html.length > MAX_HTML_BYTES || typeof result.finalUrl !== "string" || !Number.isInteger(result.status)) {
+    throw new Error("Secure page-fetch service returned an invalid page payload.");
+  }
+  const finalUrl = validatePublicUrl(result.finalUrl);
+  if (result.status < 200 || result.status >= 300) throw new Error("The target page returned HTTP " + result.status + ".");
+  return { html: result.html, finalUrl: finalUrl.href, status: result.status };
 }
 
 function decodeEntities(value) {
@@ -197,7 +207,7 @@ export default {
     let url;
     try { url = validatePublicUrl(body.url); } catch (error) { return json({ error: error.message }, 400, origin); }
     try {
-      const page = await fetchPublicHtml(url);
+      const page = await fetchPublicHtml(url, env);
       const htmlReport = inspectHtml(page.html, page.finalUrl);
       let performance = { available: false, reason: "PAGESPEED_API_KEY is not configured" };
       try { performance = await runPageSpeed(page.finalUrl, env.PAGESPEED_API_KEY); } catch { performance = { available: false, reason: "PageSpeed service temporarily unavailable" }; }
