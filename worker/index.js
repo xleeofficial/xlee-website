@@ -60,7 +60,7 @@ async function fetchPublicHtml(initialUrl, env) {
   } finally { clearTimeout(timer); }
   if (!response.ok) throw new Error("Secure page-fetch service returned HTTP " + response.status + ".");
   const type = (response.headers.get("content-type") || "").toLowerCase();
-  if (!/^application\/json(?:\\s*;|\\s*$)/i.test(type)) throw new Error("Secure page-fetch service returned an unexpected response type.");
+  if (type.split(";")[0].trim() !== "application/json") throw new Error("Secure page-fetch service returned an unexpected response type.");
   const reader = response.body?.getReader();
   if (!reader) throw new Error("Secure page-fetch service returned an empty response.");
   const chunks = [];
@@ -211,7 +211,7 @@ export default {
     if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, origin);
     if (origin && !ALLOWED_ORIGINS.has(origin)) return json({ error: "Origin not allowed" }, 403);
     const contentType = request.headers.get("content-type") || "";
-    if (!/^application\/json(?:\\s*;|\\s*$)/i.test(contentType.trim())) return json({ error: "Content-Type must be application/json" }, 415, origin);
+    if (contentType.split(";")[0].trim().toLowerCase() !== "application/json") return json({ error: "Content-Type must be application/json" }, 415, origin);
     let body;
     try { body = await readJsonLimited(request); }
     catch (error) { return json({ error: error.message }, /too large/i.test(error.message) ? 413 : 400, origin); }
