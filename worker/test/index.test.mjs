@@ -161,7 +161,7 @@ test("rejects a proxy response whose final URL is a private IP literal", async (
       env()
     );
     assert.equal(response.status, 422);
-    assert.match((await response.json()).error, /IP-address URLs/i);
+    assert.match((await response.json()).error, /could not be completed/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
