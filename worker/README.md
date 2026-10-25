@@ -24,7 +24,7 @@ Do not put API keys in `lens.js`, HTML, or any file served publicly.
 ## Security and production checklist
 
 - CORS is restricted to `https://xlee.uk` and `https://www.xlee.uk`; CORS is not authentication. Requests without an Origin header are accepted, so Turnstile verification and edge rate limiting are required before public launch. The browser must send a valid `turnstileToken` in the JSON body.
-- The URL validator rejects non-HTTP(S), credentials, IP literals, and several local/reserved-looking hostnames. Redirects are manually followed and revalidated. This is defense-in-depth only: hostname validation does **not** reliably prevent DNS rebinding or every private/reserved IP destination. Before public deployment, enforce outbound destination/IP restrictions for every request and redirect using a vetted egress proxy or equivalent network policy; test IPv4, IPv6, mapped addresses, and DNS rebinding.
+- The Worker no longer fetches arbitrary user-supplied URLs directly. It fails closed unless `SAFE_FETCH_PROXY_URL` and `SAFE_FETCH_PROXY_TOKEN` are configured, and sends page-fetch requests only to that trusted HTTPS service. The proxy must enforce destination-IP policy for every DNS resolution and redirect hop; see `worker/EGRESS-PROXY-CONTRACT.md`.
 - Configure a hard per-IP and per-origin rate limit before opening the endpoint to the public internet.
 - PageSpeed API quotas and billing/usage settings should be reviewed in Google Cloud. Never expose either secret in frontend code or logs.
 - The Worker currently caps downloaded HTML at 1.5 MB and uses short timeouts.
