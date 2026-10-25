@@ -257,8 +257,14 @@ export default {
       try { performance = await runPageSpeed(page.finalUrl, env.PAGESPEED_API_KEY); } catch { performance = { available: false, reason: "PageSpeed service temporarily unavailable" }; }
       return json({ ok: true, generatedAt: new Date().toISOString(), source: "XLEE Lens preliminary scan", report: { ...htmlReport, performance } }, 200, origin);
     } catch (error) {
-      const message = error?.name === "AbortError" || error?.name === "TimeoutError" ? "The target page took too long to respond." : error.message || "Scan failed.";
-      return json({ error: message }, 422, origin);
+      // Never return raw upstream/proxy exceptions to callers. Keep user-correctable
+      // input errors above this boundary; failures here may contain infrastructure data.
+      const timedOut = error?.name === "AbortError" || error?.name === "TimeoutError";
+      return json({
+        error: timedOut
+          ? "The scan timed out. Please try again."
+          : "The scan could not be completed. Please try again later."
+      }, 422, origin);
     }
   }
 };
