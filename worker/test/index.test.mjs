@@ -67,7 +67,7 @@ test("scan fails closed when the trusted egress proxy is not configured", async 
       { TURNSTILE_SECRET_KEY: SECRET }
     );
     assert.equal(response.status, 422);
-    assert.match((await response.json()).error, /could not be completed/i);
+    assert.match((await response.json()).error, /IP-address URLs/i);
     assert.equal(proxyCalled, false);
   } finally {
     globalThis.fetch = originalFetch;
