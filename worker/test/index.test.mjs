@@ -215,3 +215,47 @@ test("rejects a Turnstile action mismatch when expected action is configured", a
     assert.equal((await response.json()).error.includes("Anti-bot verification failed"), true);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test("handles malformed Turnstile JSON as a verification failure", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => String(url).includes("siteverify")
+    ? new Response("{not-json", { status: 200, headers: { "content-type": "application/json" } })
+    : proxyResponse();
+  try {
+    const response = await worker.fetch(
+      request("https://worker.example/api/scan", { url: "https://shop.example.com/product", turnstileToken: TOKEN }),
+      env()
+    );
+    assert.equal(response.status, 403);
+    assert.match((await response.json()).error, /temporarily unavailable/i);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("treats oversized PageSpeed responses as unavailable without failing the scan", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes("siteverify")) return turnstileResponse();
+    if (target === "https://egress.example/fetch") return proxyResponse();
+    if (target.includes("pagespeedonline")) {
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(1_000_001));
+          controller.close();
+        }
+      });
+      return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error("Unexpected outbound request");
+  };
+  try {
+    const response = await worker.fetch(
+      request("https://worker.example/api/scan", { url: "https://shop.example.com/product", turnstileToken: TOKEN }),
+      env({ PAGESPEED_API_KEY: "test-pagespeed-key" })
+    );
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.report.performance.available, false);
+    assert.match(result.report.performance.reason, /size limit/i);
+  } finally { globalThis.fetch = originalFetch; }
+});
