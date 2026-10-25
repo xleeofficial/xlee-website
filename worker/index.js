@@ -60,7 +60,7 @@ async function fetchPublicHtml(initialUrl, env) {
   } finally { clearTimeout(timer); }
   if (!response.ok) throw new Error("Secure page-fetch service returned HTTP " + response.status + ".");
   const type = (response.headers.get("content-type") || "").toLowerCase();
-  if (!/^application\\/json(?:\\s*;|\\s*$)/i.test(type)) throw new Error("Secure page-fetch service returned an unexpected response type.");
+  if (!/^application\/json(?:\\s*;|\\s*$)/i.test(type)) throw new Error("Secure page-fetch service returned an unexpected response type.");
   const reader = response.body?.getReader();
   if (!reader) throw new Error("Secure page-fetch service returned an empty response.");
   const chunks = [];
@@ -142,12 +142,25 @@ async function verifyTurnstile(token, request, secret, expectedAction) {
   form.set("response", token);
   const ip = request.headers.get("CF-Connecting-IP");
   if (ip) form.set("remoteip", ip);
-  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-    method: "POST", body: form, signal: AbortSignal.timeout(TURNSTILE_TIMEOUT_MS)
-  });
+  let response;
+  try {
+    response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST", body: form, signal: AbortSignal.timeout(TURNSTILE_TIMEOUT_MS)
+    });
+  } catch {
+    throw new Error("Anti-bot verification is temporarily unavailable.");
+  }
   if (!response.ok) throw new Error("Anti-bot verification is temporarily unavailable.");
-  const result = await response.json();
-  if (!result.success) throw new Error("Anti-bot verification failed. Refresh the challenge and try again.");
+  let result;
+  try { result = await response.json(); }
+  catch { throw new Error("Anti-bot verification is temporarily unavailable."); }
+  if (!result || result.success !== true) throw new Error("Anti-bot verification failed. Refresh the challenge and try again.");
+  if (typeof result.hostname !== "string" || !ALLOWED_ORIGINS.has("https://" + result.hostname.toLowerCase())) {
+    throw new Error("Anti-bot verification failed. Refresh the challenge and try again.");
+  }
+  if (expectedAction && result.action !== expectedAction) {
+    throw new Error("Anti-bot verification failed. Refresh the challenge and try again.");
+  }
 }
 async function readJsonLimited(request) {
   const declared = Number(request.headers.get("content-length") || 0);
@@ -198,7 +211,7 @@ export default {
     if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, origin);
     if (origin && !ALLOWED_ORIGINS.has(origin)) return json({ error: "Origin not allowed" }, 403);
     const contentType = request.headers.get("content-type") || "";
-    if (!/^application\\/json(?:\\s*;|\\s*$)/i.test(contentType.trim())) return json({ error: "Content-Type must be application/json" }, 415, origin);
+    if (!/^application\/json(?:\\s*;|\\s*$)/i.test(contentType.trim())) return json({ error: "Content-Type must be application/json" }, 415, origin);
     let body;
     try { body = await readJsonLimited(request); }
     catch (error) { return json({ error: error.message }, /too large/i.test(error.message) ? 413 : 400, origin); }
