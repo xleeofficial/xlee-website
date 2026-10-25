@@ -60,7 +60,7 @@ async function fetchPublicHtml(initialUrl, env) {
   } finally { clearTimeout(timer); }
   if (!response.ok) throw new Error("Secure page-fetch service returned HTTP " + response.status + ".");
   const type = (response.headers.get("content-type") || "").toLowerCase();
-  if (!type.includes("application/json")) throw new Error("Secure page-fetch service returned an unexpected response type.");
+  if (!/^application\\/json(?:\\s*;|\\s*$)/i.test(type)) throw new Error("Secure page-fetch service returned an unexpected response type.");
   const reader = response.body?.getReader();
   if (!reader) throw new Error("Secure page-fetch service returned an empty response.");
   const chunks = [];
@@ -134,7 +134,7 @@ function inspectHtml(html, finalUrl) {
 }
 
 
-async function verifyTurnstile(token, request, secret) {
+async function verifyTurnstile(token, request, secret, expectedAction) {
   if (!secret) throw new Error("Service is not configured for bot protection.");
   if (typeof token !== "string" || token.length < 10 || token.length > 2048) throw new Error("Complete the anti-bot verification and try again.");
   const form = new FormData();
@@ -198,11 +198,11 @@ export default {
     if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, origin);
     if (origin && !ALLOWED_ORIGINS.has(origin)) return json({ error: "Origin not allowed" }, 403);
     const contentType = request.headers.get("content-type") || "";
-    if (!contentType.toLowerCase().includes("application/json")) return json({ error: "Content-Type must be application/json" }, 415, origin);
+    if (!/^application\\/json(?:\\s*;|\\s*$)/i.test(contentType.trim())) return json({ error: "Content-Type must be application/json" }, 415, origin);
     let body;
     try { body = await readJsonLimited(request); }
     catch (error) { return json({ error: error.message }, /too large/i.test(error.message) ? 413 : 400, origin); }
-    try { await verifyTurnstile(body.turnstileToken, request, env.TURNSTILE_SECRET_KEY); }
+    try { await verifyTurnstile(body.turnstileToken, request, env.TURNSTILE_SECRET_KEY, env.TURNSTILE_EXPECTED_ACTION); }
     catch (error) { return json({ error: error.message }, 403, origin); }
     let url;
     try { url = validatePublicUrl(body.url); } catch (error) { return json({ error: error.message }, 400, origin); }
