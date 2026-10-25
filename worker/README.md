@@ -13,7 +13,9 @@ The response includes a preliminary HTML inspection and, when configured, a mobi
 
 1. Install Node.js and Wrangler: `npm install --save-dev wrangler`.
 2. From the repository root, run `npx wrangler dev worker/index.js`.
-3. Configure the secret before deployment: `npx wrangler secret put PAGESPEED_API_KEY`.
+3. Create a Cloudflare Turnstile widget for the intended site and configure the frontend with its **site key** (public).
+4. Configure Worker secrets: `npx wrangler secret put TURNSTILE_SECRET_KEY` and `npx wrangler secret put PAGESPEED_API_KEY`.
+5. Configure Cloudflare rate limiting/WAF before exposing the endpoint publicly.
 4. Deploy only after reviewing the security notes below: `npx wrangler deploy worker/index.js --name xlee-lens-api`.
 5. Set the frontend's API endpoint only after the Worker is deployed and tested.
 
@@ -21,13 +23,13 @@ Do not put API keys in `lens.js`, HTML, or any file served publicly.
 
 ## Security and production checklist
 
-- CORS is restricted to `https://xlee.uk` and `https://www.xlee.uk`; requests without an Origin header are accepted for non-browser clients, so add authentication/rate limiting before public launch.
-- The URL validator rejects non-HTTP(S), credentials, local-looking hosts, and IP literals; redirects are manually followed and each redirect is revalidated. This reduces SSRF risk but is not a substitute for a strict outbound network policy. Before public deployment, add Cloudflare rate limiting/WAF, request quotas, abuse monitoring, and verify outbound DNS/IP restrictions for all redirect hops.
+- CORS is restricted to `https://xlee.uk` and `https://www.xlee.uk`; CORS is not authentication. Requests without an Origin header are accepted, so Turnstile verification and edge rate limiting are required before public launch. The browser must send a valid `turnstileToken` in the JSON body.
+- The URL validator rejects non-HTTP(S), credentials, IP literals, and several local/reserved-looking hostnames. Redirects are manually followed and revalidated. This is defense-in-depth only: hostname validation does **not** reliably prevent DNS rebinding or every private/reserved IP destination. Before public deployment, enforce outbound destination/IP restrictions for every request and redirect using a vetted egress proxy or equivalent network policy; test IPv4, IPv6, mapped addresses, and DNS rebinding.
 - Configure a hard per-IP and per-origin rate limit before opening the endpoint to the public internet.
-- PageSpeed API quotas and billing/usage settings should be reviewed in Google Cloud.
+- PageSpeed API quotas and billing/usage settings should be reviewed in Google Cloud. Never expose either secret in frontend code or logs.
 - The Worker currently caps downloaded HTML at 1.5 MB and uses short timeouts.
 - PageSpeed is optional until `PAGESPEED_API_KEY` is configured; the API never returns the key.
-- This is a prototype, not a complete security audit. Have the final deployment reviewed before production use.
+- Turnstile verification is server-side and requires `TURNSTILE_SECRET_KEY`. A public Turnstile site key is not secret, but must be restricted to the expected domain in the Cloudflare dashboard. The frontend UI still needs to render the challenge and submit the token.\n- This is a prototype, not a complete security audit. Have the final deployment reviewed before production use.
 
 ## Current limitations
 
