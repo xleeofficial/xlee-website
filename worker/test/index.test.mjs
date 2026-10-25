@@ -20,7 +20,7 @@ function request(url, body = {}, headers = {}) {
 }
 
 function turnstileResponse() {
-  return new Response(JSON.stringify({ success: true }), {
+  return new Response(JSON.stringify({ success: true, hostname: "xlee.uk", action: "scan" }), {
     status: 200,
     headers: { "content-type": "application/json" }
   });
@@ -175,4 +175,43 @@ test("rejects oversized JSON bodies", async () => {
     body: JSON.stringify({ payload: body })
   }), env());
   assert.equal(response.status, 413);
+});
+
+test("rejects Turnstile verification for an unexpected hostname", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => String(url).includes("siteverify")
+    ? new Response(JSON.stringify({ success: true, hostname: "attacker.example", action: "scan" }), { status: 200, headers: { "content-type": "application/json" } })
+    : proxyResponse();
+  try {
+    const response = await worker.fetch(
+      request("https://worker.example/api/scan", { url: "https://shop.example.com/product", turnstileToken: TOKEN }),
+      env()
+    );
+    assert.notEqual(response.status, 200);
+    assert.equal((await response.json()).error.includes("Anti-bot verification failed"), true);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("rejects a lookalike JSON content type", async () => {
+  const response = await worker.fetch(new Request("https://worker.example/api/scan", {
+    method: "POST",
+    headers: { Origin: ORIGIN, "Content-Type": "application/jsonp" },
+    body: JSON.stringify({ url: "https://shop.example.com/product", turnstileToken: TOKEN })
+  }), env());
+  assert.equal(response.status, 415);
+});
+
+test("rejects a Turnstile action mismatch when expected action is configured", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => String(url).includes("siteverify")
+    ? new Response(JSON.stringify({ success: true, hostname: "xlee.uk", action: "other" }), { status: 200, headers: { "content-type": "application/json" } })
+    : proxyResponse();
+  try {
+    const response = await worker.fetch(
+      request("https://worker.example/api/scan", { url: "https://shop.example.com/product", turnstileToken: TOKEN }),
+      env({ TURNSTILE_EXPECTED_ACTION: "scan" })
+    );
+    assert.notEqual(response.status, 200);
+    assert.equal((await response.json()).error.includes("Anti-bot verification failed"), true);
+  } finally { globalThis.fetch = originalFetch; }
 });
