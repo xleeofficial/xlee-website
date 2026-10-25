@@ -1,38 +1,59 @@
 # XLEE Lens API — preview implementation
 
-This directory contains a Cloudflare Worker API prototype for XLEE Lens. It is not deployed and the website UI is not connected to it.
+This directory contains a Cloudflare Worker API prototype for XLEE Lens. It is not deployed, and the website UI is not connected to it.
 
 ## Routes
 
 - `GET /health` — basic health check.
-- `POST /api/scan` — accepts JSON `{"url":"https://shop.example/products/item"}`.
+- `POST /api/scan` — accepts JSON such as `{"url":"https://shop.example/products/item"}` and a valid Turnstile token.
 
 The response includes a preliminary HTML inspection and, when configured, a mobile PageSpeed Insights result. HTML findings are labeled as verified observations; conversion suggestions are not presented as guaranteed outcomes.
 
-## Local development / deployment
+## Local development
 
-1. Install Node.js and Wrangler: `npm install --save-dev wrangler`.
-2. From the repository root, run `npx wrangler dev worker/index.js`.
-3. Create a Cloudflare Turnstile widget for the intended site and configure the frontend with its **site key** (public).
-4. Configure Worker secrets: `npx wrangler secret put TURNSTILE_SECRET_KEY` and `npx wrangler secret put PAGESPEED_API_KEY`.
-5. Configure Cloudflare rate limiting/WAF before exposing the endpoint publicly.
-4. Deploy only after reviewing the security notes below: `npx wrangler deploy worker/index.js --name xlee-lens-api`.
-5. Set the frontend's API endpoint only after the Worker is deployed and tested.
+Requirements:
 
-Do not put API keys in `lens.js`, HTML, or any file served publicly.
+- Node.js 20 or later.
+- Wrangler for local Cloudflare Workers development.
+- Test credentials only; never use production secrets locally.
 
-## Security and production checklist
+From the repository root:
 
-- CORS is restricted to `https://xlee.uk` and `https://www.xlee.uk`; CORS is not authentication. Requests without an Origin header are accepted, so Turnstile verification and edge rate limiting are required before public launch. The browser must send a valid `turnstileToken` in the JSON body.
-- The Worker no longer fetches arbitrary user-supplied URLs directly. It fails closed unless `SAFE_FETCH_PROXY_URL` and `SAFE_FETCH_PROXY_TOKEN` are configured, and sends page-fetch requests only to that trusted HTTPS service. The proxy must enforce destination-IP policy for every DNS resolution and redirect hop; see `worker/EGRESS-PROXY-CONTRACT.md`.
-- Configure a hard per-IP and per-origin rate limit before opening the endpoint to the public internet.
-- PageSpeed API quotas and billing/usage settings should be reviewed in Google Cloud. Never expose either secret in frontend code or logs.
-- The Worker currently caps downloaded HTML at 1.5 MB and uses short timeouts.
-- PageSpeed is optional until `PAGESPEED_API_KEY` is configured; the API never returns the key.
-- Turnstile verification is server-side and requires `TURNSTILE_SECRET_KEY`. A public Turnstile site key is not secret, but must be restricted to the expected domain in the Cloudflare dashboard. The frontend UI still needs to render the challenge and submit the token.\n- This is a prototype, not a complete security audit. Have the final deployment reviewed before production use.
+1. Install Wrangler as a development dependency when needed: `npm install --save-dev wrangler`.
+2. Start the local Worker: `npx wrangler dev worker/index.js`.
+3. Create a Cloudflare Turnstile widget for the intended site and configure the frontend with its public **site key**.
+4. Configure test-only Worker secrets in your local development environment. Do not commit secret values.
+5. Run the tests: `cd worker && npm test`.
+
+## Production release
+
+The API is a prototype and is **not production-ready**. Do not deploy it merely because the unit tests pass.
+
+Before any public release:
+
+1. Implement and independently test the trusted SSRF-safe egress service described in `worker/EGRESS-PROXY-CONTRACT.md`.
+2. Configure `SAFE_FETCH_PROXY_URL` and `SAFE_FETCH_PROXY_TOKEN` as Worker secrets/variables using the platform's supported configuration.
+3. Configure `TURNSTILE_SECRET_KEY` and, if PageSpeed is enabled, `PAGESPEED_API_KEY` as secrets. Never place secret values in frontend code, public files, or logs.
+4. Enable and verify Cloudflare rate limits/WAF rules, request-size limits, and abuse monitoring.
+5. Review PageSpeed quota and billing controls.
+6. Run automated tests and end-to-end security tests against the deployed staging environment.
+7. Verify alerts, secret-rotation procedures, and a rollback plan before enabling public traffic.
+
+The presence of secrets alone does not make the endpoint safe. The egress service must enforce destination-IP policy for every DNS resolution and redirect hop. See `worker/EGRESS-PROXY-CONTRACT.md` and `worker/RELEASE-SECURITY-GATE.md`.
+
+## Security notes
+
+- CORS is restricted to `https://xlee.uk` and `https://www.xlee.uk`; CORS is not authentication.
+- Requests without an `Origin` header may still reach the API. Server-side Turnstile verification and edge rate limiting are required before public launch.
+- The browser must submit a valid `turnstileToken`; the secret key must remain server-side.
+- The Worker is designed to fail closed unless the trusted egress proxy is configured. Do not replace it with a direct fetch of user-supplied URLs.
+- The Worker currently caps downloaded HTML at 1.5 MB and uses timeouts. These limits do not replace egress-network protections.
+- PageSpeed is optional until `PAGESPEED_API_KEY` is configured. Results may be unavailable and must be presented as unavailable rather than fabricated.
+- The Turnstile site key is public, but its allowed hostnames should be restricted in the Cloudflare dashboard.
 
 ## Current limitations
 
-- Product structured data is only detected, not schema-validated.
+- Product structured data is detected but not fully schema-validated.
 - No whole-store crawling, accounts, storage, scheduled monitoring, or automatic fixes.
-- PageSpeed results can be unavailable for some URLs and should be shown as unavailable rather than fabricated.
+- Unit tests use mocked outbound services; they do not prove the egress proxy is safe.
+- A production security review and end-to-end testing remain mandatory.
