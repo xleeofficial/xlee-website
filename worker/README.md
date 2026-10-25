@@ -34,7 +34,7 @@ Before any public release:
 1. Implement and independently test the trusted SSRF-safe egress service described in `worker/EGRESS-PROXY-CONTRACT.md`.
 2. Configure `SAFE_FETCH_PROXY_URL` and `SAFE_FETCH_PROXY_TOKEN` as Worker secrets/variables using the platform's supported configuration.
 3. Configure `TURNSTILE_SECRET_KEY` and, if PageSpeed is enabled, `PAGESPEED_API_KEY` as secrets. Never place secret values in frontend code, public files, or logs.
-4. Enable and verify Cloudflare rate limits/WAF rules, request-size limits, and abuse monitoring.
+4. Configure `TURNSTILE_EXPECTED_ACTION=scan` and ensure the frontend Turnstile widget submits the matching `action: "scan"`; keep the expected action aligned with the widget configuration.\n5. Enable and verify Cloudflare rate limits/WAF rules, request-size limits, and abuse monitoring.
 5. Review PageSpeed quota and billing controls.
 6. Run automated tests and end-to-end security tests against the deployed staging environment.
 7. Verify alerts, secret-rotation procedures, and a rollback plan before enabling public traffic.
@@ -45,7 +45,7 @@ The presence of secrets alone does not make the endpoint safe. The egress servic
 
 - CORS is restricted to `https://xlee.uk` and `https://www.xlee.uk`; CORS is not authentication.
 - Requests without an `Origin` header may still reach the API. Server-side Turnstile verification and edge rate limiting are required before public launch.
-- The browser must submit a valid `turnstileToken`; the secret key must remain server-side.
+- The browser must submit a valid `turnstileToken`; the secret key must remain server-side. The Worker validates Turnstile hostname against `xlee.uk` / `www.xlee.uk`; configure `TURNSTILE_EXPECTED_ACTION=scan` when the widget action is set to `scan`.
 - The Worker is designed to fail closed unless the trusted egress proxy is configured. Do not replace it with a direct fetch of user-supplied URLs.
 - The Worker currently caps downloaded HTML at 1.5 MB and uses timeouts. These limits do not replace egress-network protections.
 - PageSpeed is optional until `PAGESPEED_API_KEY` is configured. Results may be unavailable and must be presented as unavailable rather than fabricated.
