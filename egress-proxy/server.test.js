@@ -23,6 +23,11 @@ test("only globally routable IPs pass the maintained IP classifier", () => {
     "2001:10::1",           // ORCHIDv1 special-purpose
     "2001:30::1",           // Drone Remote ID special-purpose
     "3fff::1",              // IPv6 documentation prefix (RFC 9637)
+    "192.0.0.1",            // IETF protocol assignments (not generally globally reachable)
+    "192.88.99.1",          // deprecated 6to4 relay anycast
+    "2001:1::1",            // IETF protocol assignment special-use
+    "2001:3::1",            // AMT special-use
+    "2001:4:112::1",        // AS112 special-use
   ]) {
     assert.equal(isGloballyRoutable(ip), false, ip);
   }
