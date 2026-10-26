@@ -207,7 +207,7 @@ function createRateLimiter({ maxRequests = 60, windowMs = 60_000, maxEntries = 1
   let lastPrune = 0;
   return {
     consume(key, now = Date.now()) {
-      if (now - lastPrune >= windowMs || buckets.size >= maxEntries) {
+      if (now - lastPrune >= windowMs || (buckets.size >= maxEntries && now - lastPrune >= 1000)) {
         for (const [bucketKey, bucket] of buckets) {
           if (now >= bucket.resetAt) buckets.delete(bucketKey);
         }
