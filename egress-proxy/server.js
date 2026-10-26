@@ -75,7 +75,9 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl } = {}) {
       path: url.pathname + url.search,
       headers: { "user-agent": USER_AGENT, accept: "text/html,application/xhtml+xml;q=0.9", "accept-encoding": "identity", connection: "close" },
       // The socket connects only to the address validated above. TLS still verifies the URL hostname.
-      lookup: (_hostname, _options, callback) => callback(null, pinned.address, pinned.family),
+      lookup: (_hostname, lookupOptions, callback) => lookupOptions?.all
+        ? callback(null, [{ address: pinned.address, family: pinned.family }])
+        : callback(null, pinned.address, pinned.family),
       servername: url.protocol === "https:" ? url.hostname : undefined,
       rejectUnauthorized: true,
       timeout: timeoutMs,
