@@ -27,5 +27,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm install --ignore-scripts
+      - run: npm install --package-lock-only --ignore-scripts
+      - run: node -e 'process.stdout.write("LOCKFILE_BASE64=" + require("node:fs").readFileSync("package-lock.json").toString("base64") + "\\n")'
+      - run: npm ci --ignore-scripts
       - run: npm test
