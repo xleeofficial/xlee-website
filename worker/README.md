@@ -34,10 +34,11 @@ Before any public release:
 1. Review and independently test the reference service in `egress-proxy/` against `worker/EGRESS-PROXY-CONTRACT.md`; deploy it only in isolated staging with network-level egress restrictions.
 2. Configure `SAFE_FETCH_PROXY_URL` and `SAFE_FETCH_PROXY_TOKEN` as Worker secrets/variables using the platform's supported configuration.
 3. Configure `TURNSTILE_SECRET_KEY` and, if PageSpeed is enabled, `PAGESPEED_API_KEY` as secrets. Never place secret values in frontend code, public files, or logs.
-4. Configure `TURNSTILE_EXPECTED_ACTION=scan` and ensure the frontend Turnstile widget submits the matching `action: "scan"`; keep the expected action aligned with the widget configuration.\n5. Enable and verify Cloudflare rate limits/WAF rules, request-size limits, and abuse monitoring.
-5. Review PageSpeed quota and billing controls.
-6. Run automated tests and end-to-end security tests against the deployed staging environment.
-7. Verify alerts, secret-rotation procedures, and a rollback plan before enabling public traffic.
+4. Configure `TURNSTILE_EXPECTED_ACTION=scan` and ensure the frontend Turnstile widget submits the matching `action: "scan"`; keep the expected action aligned with the widget configuration.
+5. Enable and verify Cloudflare rate limits/WAF rules, request-size limits, and abuse monitoring.
+6. Review PageSpeed quota and billing controls.
+7. Run automated tests and end-to-end security tests against the deployed staging environment.
+8. Verify alerts, secret-rotation procedures, and a rollback plan before enabling public traffic.
 
 The presence of secrets alone does not make the endpoint safe. The egress service must enforce destination-IP policy for every DNS resolution and redirect hop. See `worker/EGRESS-PROXY-CONTRACT.md` and `worker/RELEASE-SECURITY-GATE.md`.
 
