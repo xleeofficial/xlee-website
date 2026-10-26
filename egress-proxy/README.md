@@ -14,6 +14,7 @@ The service listens on port 8080 by default. Configure the Worker with an HTTPS 
 ## Security behavior
 
 - Bearer-token authentication and strict request-body limits.
+- In-process per-peer rate limit (default 60 `/fetch` requests per minute) with `429` and `Retry-After`; this is a local guardrail, not a replacement for distributed/service-edge rate limiting.
 - Only HTTP/HTTPS public hostnames; rejects IP literals, credentials, nonstandard ports and local-use names.
 - Uses `ipaddr.js` classification and rejects a DNS response if any A/AAAA answer is not globally routable.
 - Pins the chosen validated DNS address in the actual socket lookup callback; TLS hostname validation/SNI remain tied to the original URL hostname.
