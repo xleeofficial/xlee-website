@@ -38,8 +38,9 @@ async function fetchPublicHtml(initialUrl, env) {
   }
   let proxyUrl;
   try { proxyUrl = new URL(env.SAFE_FETCH_PROXY_URL); } catch { throw new Error("Secure page-fetch service configuration is invalid."); }
-  if (proxyUrl.protocol !== "https:" || proxyUrl.username || proxyUrl.password) {
-    throw new Error("Secure page-fetch service must use HTTPS and contain no URL credentials.");
+  if (proxyUrl.protocol !== "https:" || proxyUrl.username || proxyUrl.password ||
+      proxyUrl.pathname !== "/fetch" || proxyUrl.search || proxyUrl.hash) {
+    throw new Error("Secure page-fetch service must use HTTPS, the /fetch endpoint, and contain no credentials or URL parameters.");
   }
   validatePublicUrl(initialUrl.href);
   const controller = new AbortController();
