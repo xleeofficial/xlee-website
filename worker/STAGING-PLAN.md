@@ -71,6 +71,7 @@ A platform that cannot enforce the required outbound network policy is not suita
 
 - [Authentication and egress decisions](../infra/staging/AUTH-AND-EGRESS-DECISIONS.md) records the current staging-only auth proposal, network boundary and budget caveats.
 - [Terraform review scaffold](../infra/staging/terraform/README.md) is guarded by default and is not validated or approved to apply. It intentionally omits Cloud Run, IAM, service accounts, secrets and image deployment.
+- [Security review notes](../infra/staging/SECURITY-REVIEW-NOTES.md) records the current blockers for firewall CIDR completeness, metadata/DNS behavior, IPv6 policy, shared quotas, Terraform validation and cost review.
 
 ## Explicit non-goals
 
