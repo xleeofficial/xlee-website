@@ -59,3 +59,21 @@ The USD 5–15/month target is not guaranteed. Confirm region-specific Cloud Run
 ## Non-actions
 
 This review note does not provision resources, publish an image, deploy a service, create secrets, change DNS, modify Cloudflare/GitHub Pages, or alter production. Keep PR #3 in draft until the blockers above are addressed and evidence is reviewed.
+
+## Application and container static review (source inspection only)
+
+These are source-review observations, not newly executed tests or a full independent audit.
+
+### Additional items to close before staging
+
+- **Container base image is not immutable:** `FROM node:22-alpine` is a moving tag. For a reproducible release, resolve and pin the reviewed base image by digest in the controlled build, record the final image digest, and run a vulnerability scan. Do not publish an image as part of this review.
+- **Runtime exposure must be verified at the platform boundary:** the app listens on `0.0.0.0:8080`; the Dockerfile runs as the non-root `node` user, which is good. The platform must still enforce the intended ingress path and TLS at the public boundary. The local HTTP integration adapter does not prove those controls.
+- **The application limiter is per process and keyed by the direct socket peer:** behind a managed proxy, that peer may represent infrastructure rather than a unique caller. Treat the current limiter as a coarse defense-in-depth control, not a per-user quota. Confirm the actual peer behavior and enforce shared quotas at a trusted edge/gateway.
+- **IPv6/special-purpose classification needs a maintained test matrix:** the source uses `ipaddr.js` and rejects non-unicast ranges plus selected IPv6 translation/documentation prefixes. Before relying on it, execute the full test suite on the exact candidate commit and add explicit regression coverage for current IANA special-purpose IPv4/IPv6 ranges, including translation/transition mechanisms. Do not infer that a passing local unit suite proves the cloud firewall policy.
+- **Upstream HTTP is permitted as well as HTTPS:** decide whether cleartext upstream pages are an intentional product requirement. If HTTPS-only is chosen, enforce it consistently on initial URLs and every redirect hop. This is an integrity/privacy decision separate from the private-address SSRF checks.
+- **Health endpoint:** `GET /health` is unauthenticated and returns a minimal service identifier. Keep it limited to liveness information; do not add versions, environment values, dependency status, addresses, or secrets. Confirm the chosen platform's health-check behavior before exposing it publicly.
+
+### Evidence boundary
+
+The source and test files were inspected through the repository interface. No new test run, Terraform command, image build, vulnerability scan, deployed TLS check, or live egress test was performed in this review step. Existing CI/test results referenced in the staging plan are historical evidence for their recorded commit only; they do not validate a future image or cloud deployment.
+
