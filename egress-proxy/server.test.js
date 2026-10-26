@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import http from "node:http";
 import { fetchPublicHtml, isGloballyRoutable, validateTargetUrl, validateUpstreamHeaders, EgressError, createServer } from "./server.js";
 
 test("only globally routable IPs pass the maintained IP classifier", () => {
@@ -56,6 +57,44 @@ test("pins each request to the validated DNS answer and validates every redirect
   assert.equal(requests[1].pinned.address, "8.8.8.8");
   assert.equal(result.finalUrl, "https://other-example.com/final");
   assert.equal(result.status, 200);
+});
+
+test("real transport destroys an upstream redirect response without draining its body", async (t) => {
+  let responseClosedResolve;
+  const responseClosed = new Promise((resolve) => { responseClosedResolve = resolve; });
+  const upstream = http.createServer((_req, res) => {
+    res.writeHead(302, { location: "http://127.0.0.1/private", "content-type": "text/html" });
+    res.write("attacker-controlled body chunk");
+    res.on("close", responseClosedResolve);
+    // Deliberately leave the response open; a draining client would hang here.
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => upstream.close(() => resolve())));
+
+  const transportImpl = {
+    request(options, callback) {
+      // Exercise requestPinned with a real Node IncomingMessage, while routing
+      // the test connection to loopback instead of making a public network call.
+      return http.request({
+        ...options,
+        hostname: "127.0.0.1",
+        port: upstream.address().port,
+        lookup: undefined,
+        agent: false,
+      }, callback);
+    },
+  };
+
+  await assert.rejects(fetchPublicHtml("http://start-example.com/", {
+    resolver: async () => [{ address: "93.184.216.34", family: 4 }],
+    transportImpl,
+    timeoutMs: 1000,
+  }), /blocked_redirect/);
+
+  await Promise.race([
+    responseClosed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("redirect response was not closed promptly")), 500)),
+  ]);
 });
 
 test("blocks a redirect to a private IP before any second connection", async () => {
