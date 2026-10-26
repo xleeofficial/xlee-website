@@ -221,3 +221,32 @@ test("enforces the absolute deadline even if a mocked upstream ignores its timeo
   }), /total_timeout/);
   assert.equal(requests, 1);
 });
+
+test("HTTP endpoint rejects unsupported content types and malformed JSON", async () => {
+  const server = createServer({ token: "test-secret" });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const endpoint = `http://127.0.0.1:${server.address().port}/fetch`;
+  try {
+    const wrongType = await fetch(endpoint, {
+      method: "POST",
+      headers: { authorization: "Bearer test-secret", "content-type": "text/plain" },
+      body: '{"url":"https://public-example.com/"}',
+    });
+    assert.equal(wrongType.status, 415);
+    assert.deepEqual(await wrongType.json(), { error: "unsupported_media_type" });
+
+    const malformed = await fetch(endpoint, {
+      method: "POST",
+      headers: { authorization: "Bearer test-secret", "content-type": "application/json" },
+      body: '{"url":',
+    });
+    assert.equal(malformed.status, 422);
+    assert.deepEqual(await malformed.json(), { error: "fetch_failed", code: "fetch_failed" });
+
+    const wrongMethod = await fetch(endpoint, { method: "GET" });
+    assert.equal(wrongMethod.status, 404);
+    assert.deepEqual(await wrongMethod.json(), { error: "not_found" });
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
