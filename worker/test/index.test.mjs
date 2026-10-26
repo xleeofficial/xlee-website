@@ -97,6 +97,35 @@ test("rejects IP-literal target before calling the egress proxy", async () => {
   }
 });
 
+test("rejects IPv6 loopback, link-local, and alternate numeric IP encodings before proxy fetch", async () => {
+  const originalFetch = globalThis.fetch;
+  let proxyCalled = false;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("siteverify")) return turnstileResponse();
+    proxyCalled = true;
+    throw new Error("Proxy must not be called for IP literals");
+  };
+  try {
+    for (const url of [
+      "http://[::1]/",
+      "http://[::ffff:127.0.0.1]/",
+      "http://169.254.169.254/latest/meta-data/",
+      "http://127.1/",
+      "http://2130706433/",
+      "http://0x7f000001/"
+    ]) {
+      const response = await worker.fetch(
+        request("https://worker.example/api/scan", { url, turnstileToken: TOKEN }),
+        env()
+      );
+      assert.equal(response.status, 400, url);
+    }
+    assert.equal(proxyCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("rejects URL credentials and non-HTTP schemes before proxy fetch", async () => {
   const originalFetch = globalThis.fetch;
   let proxyCalled = false;
