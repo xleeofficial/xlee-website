@@ -250,3 +250,24 @@ test("HTTP endpoint rejects unsupported content types and malformed JSON", async
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });
+
+
+test("oversized request body receives a complete 413 JSON response", async () => {
+  const server = createServer({ token: "test-secret" });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const endpoint = `http://127.0.0.1:${server.address().port}/fetch`;
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-secret",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ url: "https://public-example.com/", padding: "x".repeat(5000) }),
+    });
+    assert.equal(response.status, 413);
+    assert.deepEqual(await response.json(), { error: "request_too_large" });
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
