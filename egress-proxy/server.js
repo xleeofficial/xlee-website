@@ -241,12 +241,13 @@ export function createServer({ token = process.env.SAFE_FETCH_PROXY_TOKEN, resol
   const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: true, service: "xlee-lens-egress" });
     if (req.method !== "POST" || req.url !== "/fetch") return send(res, 404, { error: "not_found" });
-    // Use the direct peer address; do not trust caller-controlled X-Forwarded-For.
-    const rate = rateLimiter.consume(req.socket.remoteAddress || "unknown");
-    if (!rate.allowed) return send(res, 429, { error: "rate_limited" }, { "retry-after": String(rate.retryAfter) });
     if (!token || !safeEqual(req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : "", token)) {
       return send(res, 401, { error: "unauthorized" });
     }
+    // Rate-limit authenticated fetches by the direct peer address; never trust
+    // caller-controlled X-Forwarded-For to identify the client.
+    const rate = rateLimiter.consume(req.socket.remoteAddress || "unknown");
+    if (!rate.allowed) return send(res, 429, { error: "rate_limited" }, { "retry-after": String(rate.retryAfter) });
     const contentType = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
     if (contentType !== "application/json") return send(res, 415, { error: "unsupported_media_type" });
     const chunks = [];
