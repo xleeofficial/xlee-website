@@ -1,4 +1,5 @@
 import http from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import https from "node:https";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
@@ -162,7 +163,7 @@ export async function fetchPublicHtml(rawUrl, {
 function safeEqual(a, b) {
   const left = Buffer.from(a || "");
   const right = Buffer.from(b || "");
-  return left.length === right.length && left.length > 0 && left.equals(right);
+  return left.length === right.length && left.length > 0 && timingSafeEqual(left, right);
 }
 
 function send(res, status, body) {
@@ -172,7 +173,7 @@ function send(res, status, body) {
 }
 
 export function createServer({ token = process.env.SAFE_FETCH_PROXY_TOKEN, resolver = dnsLookup, requestImpl } = {}) {
-  return http.createServer(async (req, res) => {
+  const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: true, service: "xlee-lens-egress" });
     if (req.method !== "POST" || req.url !== "/fetch") return send(res, 404, { error: "not_found" });
     if (!token || !safeEqual(req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : "", token)) {
@@ -205,6 +206,11 @@ export function createServer({ token = process.env.SAFE_FETCH_PROXY_TOKEN, resol
       return send(res, status, { error: "fetch_failed", code });
     }
   });
+  server.headersTimeout = 5_000;
+  server.requestTimeout = 15_000;
+  server.keepAliveTimeout = 5_000;
+  server.maxHeadersCount = 50;
+  return server;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
