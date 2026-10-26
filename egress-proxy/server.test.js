@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchPublicHtml, isGloballyRoutable, validateTargetUrl, EgressError } from "./server.js";
+import { fetchPublicHtml, isGloballyRoutable, validateTargetUrl, EgressError, createServer } from "./server.js";
 
 test("only globally routable IPs pass the maintained IP classifier", () => {
   for (const ip of ["127.0.0.1", "10.0.0.1", "169.254.169.254", "192.168.1.2", "0.0.0.0", "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1", "224.0.0.1"]) {
@@ -74,4 +74,38 @@ test("enforces byte and request limits", async () => {
     requestImpl: async () => ({ status: 200, html: "four" }),
   }), /response_too_large/);
   await assert.rejects(fetchPublicHtml("https://start-example.com/", { maxBytes: 2_000_000 }), /invalid_limits/);
+});
+
+test("HTTP endpoint requires bearer authentication and returns only bounded fetch results", async () => {
+  const server = createServer({
+    token: "test-secret",
+    resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+    requestImpl: async () => ({ status: 200, html: "<html>ok</html>" }),
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const endpoint = `http://127.0.0.1:${address.port}/fetch`;
+  try {
+    const denied = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://public-example.com/" }),
+    });
+    assert.equal(denied.status, 401);
+    assert.deepEqual(await denied.json(), { error: "unauthorized" });
+
+    const accepted = await fetch(endpoint, {
+      method: "POST",
+      headers: { authorization: "Bearer test-secret", "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://public-example.com/" }),
+    });
+    assert.equal(accepted.status, 200);
+    assert.deepEqual(await accepted.json(), {
+      html: "<html>ok</html>",
+      finalUrl: "https://public-example.com/",
+      status: 200,
+    });
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
 });
