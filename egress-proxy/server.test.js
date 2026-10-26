@@ -1,9 +1,34 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchPublicHtml, isGloballyRoutable, validateTargetUrl, EgressError } from "./server.js";
+import http from "node:http";
+import { EventEmitter } from "node:events";
+import { Readable } from "node:stream";
+import { fetchPublicHtml, isGloballyRoutable, validateTargetUrl, validateUpstreamHeaders, EgressError, createServer } from "./server.js";
 
 test("only globally routable IPs pass the maintained IP classifier", () => {
-  for (const ip of ["127.0.0.1", "10.0.0.1", "169.254.169.254", "192.168.1.2", "0.0.0.0", "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1", "224.0.0.1"]) {
+  for (const ip of ["127.0.0.1", "10.0.0.1", "169.254.169.254", "192.168.1.2", "0.0.0.0", "100.64.0.1", "192.0.2.1", "198.18.0.1", "198.51.100.2", "203.0.113.2", "240.0.0.1", "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1", "2001:db8::1", "ff02::1"]) {
+    assert.equal(isGloballyRoutable(ip), false, ip);
+  }
+  // Special-use IPv6 transition/translation ranges must not be treated as
+  // ordinary public destinations; some can encode otherwise non-public IPv4.
+  for (const ip of [
+    "64:ff9b::a00:1",       // well-known NAT64 prefix carrying 10.0.0.1
+    "64:ff9b:1::a00:1",     // local-use NAT64 prefix carrying 10.0.0.1
+    "2002:c0a8:0101::1",    // 6to4 address encoding 192.168.1.1
+    "2001::1",              // Teredo range
+    "2001:db8:abcd::1",     // documentation
+    "100::1",               // discard-only
+    "2001:20::1",           // ORCHIDv2 special-purpose
+    "2001:2::1",            // benchmarking
+    "2001:10::1",           // ORCHIDv1 special-purpose
+    "2001:30::1",           // Drone Remote ID special-purpose
+    "3fff::1",              // IPv6 documentation prefix (RFC 9637)
+    "192.0.0.1",            // IETF protocol assignments (not generally globally reachable)
+    "192.88.99.1",          // deprecated 6to4 relay anycast
+    "2001:1::1",            // IETF protocol assignment special-use
+    "2001:3::1",            // AMT special-use
+    "2001:4:112::1",        // AS112 special-use
+  ]) {
     assert.equal(isGloballyRoutable(ip), false, ip);
   }
   assert.equal(isGloballyRoutable("8.8.8.8"), true);
@@ -45,6 +70,78 @@ test("pins each request to the validated DNS answer and validates every redirect
   assert.equal(result.status, 200);
 });
 
+test("real transport destroys an upstream redirect response without draining its body", async (t) => {
+  let responseClosedResolve;
+  const responseClosed = new Promise((resolve) => { responseClosedResolve = resolve; });
+  const upstream = http.createServer((_req, res) => {
+    res.writeHead(302, { location: "http://127.0.0.1/private", "content-type": "text/html" });
+    res.write("attacker-controlled body chunk");
+    res.on("close", responseClosedResolve);
+    // Deliberately leave the response open; a draining client would hang here.
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => upstream.close(() => resolve())));
+
+  const transportImpl = {
+    request(options, callback) {
+      // Exercise requestPinned with a real Node IncomingMessage, while routing
+      // the test connection to loopback instead of making a public network call.
+      return http.request({
+        ...options,
+        hostname: "127.0.0.1",
+        port: upstream.address().port,
+        lookup: undefined,
+        agent: false,
+      }, callback);
+    },
+  };
+
+  await assert.rejects(fetchPublicHtml("http://start-example.com/", {
+    resolver: async () => [{ address: "93.184.216.34", family: 4 }],
+    transportImpl,
+    timeoutMs: 1000,
+  }), /blocked_redirect/);
+
+  await Promise.race([
+    responseClosed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("redirect response was not closed promptly")), 500)),
+  ]);
+});
+
+test("real transport enforces an absolute deadline against slow-drip HTML", async (t) => {
+  let interval;
+  const upstream = http.createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-encoding": "identity" });
+    res.write("<html>");
+    interval = setInterval(() => {
+      if (!res.destroyed) res.write("x");
+    }, 60);
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  t.after(async () => {
+    if (interval) clearInterval(interval);
+    await new Promise((resolve) => upstream.close(() => resolve()));
+  });
+  const transportImpl = {
+    request(options, callback) {
+      return http.request({
+        ...options,
+        hostname: "127.0.0.1",
+        port: upstream.address().port,
+        lookup: undefined,
+        agent: false,
+      }, callback);
+    },
+  };
+  const started = Date.now();
+  await assert.rejects(fetchPublicHtml("http://slow-drip-example.com/", {
+    resolver: async () => [{ address: "93.184.216.34", family: 4 }],
+    transportImpl,
+    timeoutMs: 300,
+  }), /upstream_timeout/);
+  assert.ok(Date.now() - started < 1500, "absolute deadline should terminate a slow-drip response promptly");
+});
+
 test("blocks a redirect to a private IP before any second connection", async () => {
   let calls = 0;
   await assert.rejects(fetchPublicHtml("https://start-example.com/", {
@@ -74,4 +171,274 @@ test("enforces byte and request limits", async () => {
     requestImpl: async () => ({ status: 200, html: "four" }),
   }), /response_too_large/);
   await assert.rejects(fetchPublicHtml("https://start-example.com/", { maxBytes: 2_000_000 }), /invalid_limits/);
+});
+
+test("HTTP endpoint requires bearer authentication and returns only bounded fetch results", async () => {
+  const server = createServer({
+    token: "test-secret",
+    resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+    requestImpl: async () => ({ status: 200, html: "<html>ok</html>" }),
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const endpoint = `http://127.0.0.1:${address.port}/fetch`;
+  try {
+    const denied = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://public-example.com/" }),
+    });
+    assert.equal(denied.status, 401);
+    assert.deepEqual(await denied.json(), { error: "unauthorized" });
+
+    const accepted = await fetch(endpoint, {
+      method: "POST",
+      headers: { authorization: "Bearer test-secret", "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://public-example.com/" }),
+    });
+    assert.equal(accepted.status, 200);
+    assert.deepEqual(await accepted.json(), {
+      html: "<html>ok</html>",
+      finalUrl: "https://public-example.com/",
+      status: 200,
+    });
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+
+test("blocks a redirect hostname when its DNS resolves to a private address", async () => {
+  const resolvedHosts = [];
+  let requests = 0;
+  await assert.rejects(fetchPublicHtml("https://start-example.com/", {
+    resolver: async (host) => {
+      resolvedHosts.push(host);
+      return host === "start-example.com"
+        ? [{ address: "8.8.8.8", family: 4 }]
+        : [{ address: "10.10.0.8", family: 4 }];
+    },
+    requestImpl: async () => {
+      requests++;
+      return { status: 302, location: "https://redirect-example.com/private", html: "" };
+    },
+  }), /non_public_dns_answer/);
+  assert.deepEqual(resolvedHosts, ["start-example.com", "redirect-example.com"]);
+  assert.equal(requests, 1, "must not connect to the redirect destination");
+});
+
+test("rejects redirect schemes and non-standard ports", async () => {
+  for (const location of [
+    "file:///etc/passwd",
+    "gopher://redirect-example.com/",
+    "https://redirect-example.com:9443/",
+    "//127.0.0.1/admin",
+  ]) {
+    let requests = 0;
+    await assert.rejects(fetchPublicHtml("https://start-example.com/", {
+      resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+      requestImpl: async () => {
+        requests++;
+        return { status: 302, location, html: "" };
+      },
+    }), /blocked_redirect/);
+    assert.equal(requests, 1);
+  }
+});
+
+test("HTTPS transport pins the validated address while retaining the original TLS hostname", async () => {
+  let captured;
+  const transportImpl = {
+    request(options, callback) {
+      captured = options;
+      options.lookup(options.hostname, {}, (error, address, family) => {
+        assert.ifError(error);
+        assert.equal(address, "8.8.8.8");
+        assert.equal(family, 4);
+      });
+      const req = new EventEmitter();
+      req.end = () => {
+        const res = new Readable({ read() {} });
+        res.statusCode = 200;
+        res.headers = { "content-type": "text/html; charset=utf-8", "content-encoding": "identity" };
+        callback(res);
+        res.push("<html>ok</html>");
+        res.push(null);
+      };
+      req.destroy = (error) => { if (error) req.emit("error", error); };
+      return req;
+    }
+  };
+  const result = await fetchPublicHtml("https://public-example.com/", {
+    resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+    transportImpl
+  });
+  assert.equal(result.html, "<html>ok</html>");
+  assert.equal(captured.hostname, "public-example.com");
+  assert.equal(captured.servername, "public-example.com");
+  assert.equal(captured.rejectUnauthorized, true);
+  assert.equal(captured.agent, false);
+});
+
+test("a stalled DNS resolver is bounded by the request deadline", async () => {
+  const started = Date.now();
+  await assert.rejects(fetchPublicHtml("https://start-example.com/", {
+    timeoutMs: 100,
+    resolver: async () => new Promise(() => {}),
+    requestImpl: async () => assert.fail("must not request after DNS timeout"),
+  }), /dns_timeout/);
+  assert.ok(Date.now() - started < 1000, "DNS timeout should fail promptly");
+});
+
+test("validates upstream status, HTML MIME type, and identity encoding", () => {
+  assert.equal(validateUpstreamHeaders(200, { "content-type": "text/html; charset=utf-8" }), true);
+  assert.equal(validateUpstreamHeaders(200, { "content-type": "application/xhtml+xml", "content-encoding": "identity" }), true);
+
+  for (const headers of [
+    {},
+    { "content-type": "application/json" },
+    { "content-type": "text/plain" },
+  ]) {
+    assert.throws(() => validateUpstreamHeaders(200, headers), /content_type_blocked/);
+  }
+
+  for (const encoding of ["gzip", "br", "deflate", "GZIP"]) {
+    assert.throws(() => validateUpstreamHeaders(200, {
+      "content-type": "text/html",
+      "content-encoding": encoding,
+    }), /content_encoding_blocked/);
+  }
+
+  for (const status of [0, 199, 300, 301, 404, 500, 200.5]) {
+    assert.throws(() => validateUpstreamHeaders(status, { "content-type": "text/html" }), /upstream_status/);
+  }
+});
+
+
+test("rejects mixed public IPv4 and private IPv6 DNS answers", async () => {
+  let requests = 0;
+  await assert.rejects(fetchPublicHtml("https://dualstack-example.com/", {
+    resolver: async () => [
+      { address: "8.8.8.8", family: 4 },
+      { address: "fd00::1234", family: 6 },
+    ],
+    requestImpl: async () => { requests++; return { status: 200, html: "should not fetch" }; },
+  }), /non_public_dns_answer/);
+  assert.equal(requests, 0);
+});
+
+test("rejects local-use hostname suffixes and fully-qualified trailing-dot names", () => {
+  for (const url of [
+    "http://printer.local/",
+    "http://service.internal/",
+    "http://dev.test/",
+    "http://machine.localhost/",
+    "https://example.com./",
+  ]) {
+    assert.throws(() => validateTargetUrl(url), EgressError, url);
+  }
+});
+
+test("enforces the absolute deadline even if a mocked upstream ignores its timeout", async () => {
+  let requests = 0;
+  await assert.rejects(fetchPublicHtml("https://slow-example.com/", {
+    timeoutMs: 100,
+    resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+    requestImpl: async () => {
+      requests++;
+      await new Promise((resolve) => setTimeout(resolve, 130));
+      return { status: 200, html: "<html>late</html>" };
+    },
+  }), /total_timeout/);
+  assert.equal(requests, 1);
+});
+
+test("HTTP endpoint rejects unsupported content types and malformed JSON", async () => {
+  const server = createServer({ token: "test-secret" });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const endpoint = `http://127.0.0.1:${server.address().port}/fetch`;
+  try {
+    const wrongType = await fetch(endpoint, {
+      method: "POST",
+      headers: { authorization: "Bearer test-secret", "content-type": "text/plain" },
+      body: '{"url":"https://public-example.com/"}',
+    });
+    assert.equal(wrongType.status, 415);
+    assert.deepEqual(await wrongType.json(), { error: "unsupported_media_type" });
+
+    const malformed = await fetch(endpoint, {
+      method: "POST",
+      headers: { authorization: "Bearer test-secret", "content-type": "application/json" },
+      body: '{"url":',
+    });
+    assert.equal(malformed.status, 422);
+    assert.deepEqual(await malformed.json(), { error: "fetch_failed", code: "fetch_failed" });
+
+    const wrongMethod = await fetch(endpoint, { method: "GET" });
+    assert.equal(wrongMethod.status, 404);
+    assert.deepEqual(await wrongMethod.json(), { error: "not_found" });
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+
+test("HTTP endpoint rate-limits a peer and sends Retry-After", async () => {
+  let fetchCalls = 0;
+  const server = createServer({
+    token: "test-secret",
+    rateLimitMax: 1,
+    rateLimitWindowMs: 60_000,
+    resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+    requestImpl: async () => {
+      fetchCalls++;
+      return { status: 200, html: "<html>ok</html>" };
+    },
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const endpoint = `http://127.0.0.1:${server.address().port}/fetch`;
+  const options = {
+    method: "POST",
+    headers: { authorization: "Bearer test-secret", "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://public-example.com/" }),
+  };
+  try {
+    const unauthorized = await fetch(endpoint, {
+      ...options,
+      headers: { ...options.headers, authorization: "Bearer wrong-secret" },
+    });
+    assert.equal(unauthorized.status, 401);
+    const first = await fetch(endpoint, options);
+    assert.equal(first.status, 200, "unauthenticated requests must not consume the authorized fetch quota");
+    const limited = await fetch(endpoint, {
+      ...options,
+      headers: { ...options.headers, "x-forwarded-for": "203.0.113.7" },
+    });
+    assert.equal(limited.status, 429, "caller-controlled forwarding headers must not bypass the peer limit");
+    assert.equal(limited.headers.get("retry-after"), "60");
+    assert.deepEqual(await limited.json(), { error: "rate_limited" });
+    assert.equal(fetchCalls, 1, "rate-limited requests must not trigger upstream fetches");
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("oversized request body receives a complete 413 JSON response", async () => {
+  const server = createServer({ token: "test-secret" });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const endpoint = `http://127.0.0.1:${server.address().port}/fetch`;
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-secret",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ url: "https://public-example.com/", padding: "x".repeat(5000) }),
+    });
+    assert.equal(response.status, 413);
+    assert.deepEqual(await response.json(), { error: "request_too_large" });
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
 });
