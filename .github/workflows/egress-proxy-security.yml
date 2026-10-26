@@ -29,5 +29,8 @@ jobs:
           node-version: "22"
       - run: npm ci --ignore-scripts
       - run: npm test
+      - name: Run Worker security tests
+        working-directory: worker
+        run: npm test
       - name: Build container image without publishing
         run: docker build --tag xlee-lens-egress-proxy:test .
