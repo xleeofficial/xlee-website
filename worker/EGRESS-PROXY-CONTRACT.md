@@ -1,6 +1,6 @@
 # Trusted egress fetch service contract
 
-The XLEE Lens Worker intentionally refuses to fetch user-provided URLs directly. Configure `SAFE_FETCH_PROXY_URL` and `SAFE_FETCH_PROXY_TOKEN` only for a dedicated, reviewed egress service that satisfies every requirement below. This contract is a specification, not an implementation or deployment.
+The XLEE Lens Worker intentionally refuses to fetch user-provided URLs directly. Configure `SAFE_FETCH_PROXY_URL` and `SAFE_FETCH_PROXY_TOKEN` only for a dedicated, reviewed egress service that satisfies every requirement below. This document is the Worker/proxy contract. The reference implementation does not replace independent security review, network-level egress restrictions, or staging validation.
 
 ## Request
 
