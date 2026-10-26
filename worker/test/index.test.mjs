@@ -77,6 +77,37 @@ test("scan fails closed when the trusted egress proxy is not configured", async 
   }
 });
 
+test("rejects unsafe trusted-proxy URL configuration before sending the bearer token", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const proxyUrl of [
+      "http://egress.example/fetch",
+      "https://egress.example/",
+      "https://egress.example/fetch?redirect=https://attacker.example/",
+      "https://egress.example/fetch#fragment",
+      "https://user:pass@egress.example/fetch"
+    ]) {
+      let proxyCalled = false;
+      globalThis.fetch = async (url) => {
+        if (String(url).includes("siteverify")) return turnstileResponse();
+        proxyCalled = true;
+        throw new Error("Proxy must not be called for unsafe configuration");
+      };
+      const response = await worker.fetch(
+        request("https://worker.example/api/scan", {
+          url: "https://shop.example.com/product",
+          turnstileToken: TOKEN
+        }),
+        env({ SAFE_FETCH_PROXY_URL: proxyUrl })
+      );
+      assert.equal(response.status, 422, proxyUrl);
+      assert.equal(proxyCalled, false, proxyUrl);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("rejects IP-literal target before calling the egress proxy", async () => {
   const originalFetch = globalThis.fetch;
   let proxyCalled = false;
