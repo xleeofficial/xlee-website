@@ -183,3 +183,41 @@ test("validates upstream status, HTML MIME type, and identity encoding", () => {
   }
 });
 
+
+test("rejects mixed public IPv4 and private IPv6 DNS answers", async () => {
+  let requests = 0;
+  await assert.rejects(fetchPublicHtml("https://dualstack-example.com/", {
+    resolver: async () => [
+      { address: "8.8.8.8", family: 4 },
+      { address: "fd00::1234", family: 6 },
+    ],
+    requestImpl: async () => { requests++; return { status: 200, html: "should not fetch" }; },
+  }), /non_public_dns_answer/);
+  assert.equal(requests, 0);
+});
+
+test("rejects local-use hostname suffixes and fully-qualified trailing-dot names", () => {
+  for (const url of [
+    "http://printer.local/",
+    "http://service.internal/",
+    "http://dev.test/",
+    "http://machine.localhost/",
+    "https://example.com./",
+  ]) {
+    assert.throws(() => validateTargetUrl(url), EgressError, url);
+  }
+});
+
+test("enforces the absolute deadline even if a mocked upstream ignores its timeout", async () => {
+  let requests = 0;
+  await assert.rejects(fetchPublicHtml("https://slow-example.com/", {
+    timeoutMs: 100,
+    resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+    requestImpl: async () => {
+      requests++;
+      await new Promise((resolve) => setTimeout(resolve, 130));
+      return { status: 200, html: "<html>late</html>" };
+    },
+  }), /total_timeout/);
+  assert.equal(requests, 1);
+});
