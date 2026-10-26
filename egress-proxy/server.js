@@ -77,10 +77,10 @@ async function resolveAndPin(hostname, resolver = dnsLookup) {
   return answers[0];
 }
 
-function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl } = {}) {
+function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl, transportImpl } = {}) {
   if (requestImpl) return requestImpl(url, pinned, { timeoutMs, maxBytes });
   return new Promise((resolve, reject) => {
-    const transport = url.protocol === "https:" ? https : http;
+    const transport = transportImpl || (url.protocol === "https:" ? https : http);
     let deadlineTimer;
     const options = {
       protocol: url.protocol,
@@ -143,6 +143,7 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl } = {}) {
 export async function fetchPublicHtml(rawUrl, {
   resolver = dnsLookup,
   requestImpl,
+  transportImpl,
   maxBytes = DEFAULT_MAX_HTML_BYTES,
   maxRedirects = MAX_REDIRECTS,
   timeoutMs = MAX_TIMEOUT_MS,
@@ -171,6 +172,7 @@ export async function fetchPublicHtml(rawUrl, {
       timeoutMs: remaining,
       maxBytes,
       requestImpl,
+      transportImpl,
     });
     if (Date.now() >= deadline) throw new EgressError("total_timeout");
     if (result.location) {
