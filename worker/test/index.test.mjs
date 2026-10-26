@@ -197,7 +197,7 @@ test("malformed numeric HTML entities do not crash page inspection", async () =>
     assert.equal(response.status, 200);
     const result = await response.json();
     assert.equal(result.ok, true);
-    assert.match(result.report.page.title, /Product \\uFFFD title/);
+    assert.ok(result.report.page.title.includes(String.fromCharCode(0xfffd)));
   } finally {
     globalThis.fetch = originalFetch;
   }
