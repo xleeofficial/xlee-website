@@ -2,6 +2,7 @@ import http from "node:http";
 import https from "node:https";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { pathToFileURL } from "node:url";
 import ipaddr from "ipaddr.js";
 
 const MAX_BODY_BYTES = 4096;
@@ -197,7 +198,7 @@ export function createServer({ token = process.env.SAFE_FETCH_PROXY_TOKEN, resol
   });
 }
 
-if (process.env.NODE_ENV !== "test" && process.env.EGRESS_PROXY_NO_LISTEN !== "1") {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT || 8080);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid PORT");
   createServer().listen(port, "0.0.0.0");
