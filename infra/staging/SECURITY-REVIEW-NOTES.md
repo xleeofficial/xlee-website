@@ -93,11 +93,11 @@ Scope: read-only inspection of PR #3 files, current source, Terraform scaffold, 
 
 ### Current CI evidence checked
 
-For PR head `e96a36f596f48c1b18a29c3fe54cfb15e1ee8602`, GitHub Actions reports both current PR-triggered jobs successful:
-- Lens Worker security tests — run ID `40390067241`; test step passed.
-- Egress proxy SSRF security tests — run ID `40390067476`; dependency install, proxy tests, Worker tests, local container build, and local smoke test all passed.
+For the latest PR head `9d4baaae7a9ff0a45379cfe13da147c09ff54121`, GitHub Actions reports both PR-triggered jobs completed successfully:
+- Lens Worker security tests — run ID `40390603442`; test step passed.
+- Egress proxy SSRF security tests — run ID `40390603500`; dependency install, proxy tests, Worker tests, local container build, and local smoke test all passed.
 
-This confirms the listed CI steps completed successfully for that commit. It does **not** validate Terraform, a deployed image, real HTTPS between Worker and Cloud Run, network-level egress policy, shared quotas, metadata isolation, or production readiness. The combined commit-status endpoint returned no status entries, so the conclusion above is based on the explicit workflow-run/job/step results rather than that endpoint.
+The previous code/test workflow runs on commit `e96a36f596f48c1b18a29c3fe54cfb15e1ee8602` were also successful. This confirms the listed CI steps completed successfully for the current PR head; it does **not** validate Terraform, a deployed image, real HTTPS between Worker and Cloud Run, network-level egress policy, shared quotas, metadata isolation, or production readiness. The combined commit-status endpoint returned no status entries, so the conclusion above is based on explicit workflow-run/job/step results rather than that endpoint.
 
 ### Review governance and safe state
 
