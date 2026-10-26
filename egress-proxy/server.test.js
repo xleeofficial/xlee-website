@@ -17,6 +17,9 @@ test("only globally routable IPs pass the maintained IP classifier", () => {
     "2001:db8:abcd::1",     // documentation
     "100::1",               // discard-only
     "2001:20::1",           // ORCHIDv2 special-purpose
+    "2001:2::1",            // benchmarking
+    "2001:10::1",           // ORCHIDv1 special-purpose
+    "2001:30::1",           // Drone Remote ID special-purpose
   ]) {
     assert.equal(isGloballyRoutable(ip), false, ip);
   }
