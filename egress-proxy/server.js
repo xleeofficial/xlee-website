@@ -15,6 +15,8 @@ const USER_AGENT = "XLEE-Lens-Egress/0.1 (+https://xlee.uk)";
 const HTML_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 // RFC 8215 local-use NAT64 can translate embedded IPv4 destinations, including private ones.
 const LOCAL_USE_NAT64_PREFIX = ipaddr.parse("64:ff9b:1::");
+// RFC 9637 IPv6 documentation prefix; it is not a public destination.
+const DOCUMENTATION_IPV6_PREFIX = ipaddr.parse("3fff::");
 
 export class EgressError extends Error {
   constructor(code, message = code) { super(message); this.name = "EgressError"; this.code = code; }
@@ -24,7 +26,7 @@ export function isGloballyRoutable(address) {
   try {
     const parsed = ipaddr.parse(address);
     // Do not allow local-use NAT64, which may translate an embedded private IPv4 target.
-    if (parsed.kind() === "ipv6" && parsed.match(LOCAL_USE_NAT64_PREFIX, 48)) return false;
+    if (parsed.kind() === "ipv6" && (parsed.match(LOCAL_USE_NAT64_PREFIX, 48) || parsed.match(DOCUMENTATION_IPV6_PREFIX, 20))) return false;
     // ipaddr.js classifies many special-purpose and non-global ranges separately.
     return parsed.range() === "unicast";
   } catch { return false; }
