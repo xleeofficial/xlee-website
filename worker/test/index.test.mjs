@@ -41,6 +41,7 @@ function proxyResponse(overrides = {}) {
 function env(extra = {}) {
   return {
     TURNSTILE_SECRET_KEY: SECRET,
+    TURNSTILE_EXPECTED_ACTION: "scan",
     SAFE_FETCH_PROXY_URL: "https://egress.example/fetch",
     SAFE_FETCH_PROXY_TOKEN: PROXY_TOKEN,
     ...extra
@@ -288,5 +289,27 @@ test("treats oversized PageSpeed responses as unavailable without failing the sc
     const result = await response.json();
     assert.equal(result.report.performance.available, false);
     assert.match(result.report.performance.reason, /size limit/i);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+
+test("fails closed when the expected Turnstile action is not configured", async () => {
+  const originalFetch = globalThis.fetch;
+  let verifyCalled = false;
+  let proxyCalled = false;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("siteverify")) verifyCalled = true;
+    else proxyCalled = true;
+    throw new Error("Unexpected outbound request");
+  };
+  try {
+    const response = await worker.fetch(
+      request("https://worker.example/api/scan", { url: "https://shop.example.com/product", turnstileToken: TOKEN }),
+      env({ TURNSTILE_EXPECTED_ACTION: undefined })
+    );
+    assert.equal(response.status, 403);
+    assert.match((await response.json()).error, /Anti-bot verification is temporarily unavailable/i);
+    assert.equal(verifyCalled, false);
+    assert.equal(proxyCalled, false);
   } finally { globalThis.fetch = originalFetch; }
 });
