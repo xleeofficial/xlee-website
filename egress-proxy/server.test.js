@@ -10,6 +10,7 @@ test("only globally routable IPs pass the maintained IP classifier", () => {
   // ordinary public destinations; some can encode otherwise non-public IPv4.
   for (const ip of [
     "64:ff9b::a00:1",       // well-known NAT64 prefix carrying 10.0.0.1
+    "64:ff9b:1::a00:1",     // local-use NAT64 prefix carrying 10.0.0.1
     "2002:c0a8:0101::1",    // 6to4 address encoding 192.168.1.1
     "2001::1",              // Teredo range
     "2001:db8:abcd::1",     // documentation
