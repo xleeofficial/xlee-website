@@ -11,6 +11,7 @@ on:
     branches: [feature/xlee-lens-api]
     paths:
       - "egress-proxy/**"
+      - "worker/**"
       - ".github/workflows/egress-proxy-security.yml"
 
 permissions:
