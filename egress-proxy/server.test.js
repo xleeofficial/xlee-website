@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchPublicHtml, isGloballyRoutable, validateTargetUrl, EgressError, createServer } from "./server.js";
+import { fetchPublicHtml, isGloballyRoutable, validateTargetUrl, validateUpstreamHeaders, EgressError, createServer } from "./server.js";
 
 test("only globally routable IPs pass the maintained IP classifier", () => {
   for (const ip of ["127.0.0.1", "10.0.0.1", "169.254.169.254", "192.168.1.2", "0.0.0.0", "100.64.0.1", "192.0.2.1", "198.18.0.1", "198.51.100.2", "203.0.113.2", "240.0.0.1", "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1", "2001:db8::1", "ff02::1"]) {
@@ -158,3 +158,28 @@ test("a stalled DNS resolver is bounded by the request deadline", async () => {
   }), /dns_timeout/);
   assert.ok(Date.now() - started < 1000, "DNS timeout should fail promptly");
 });
+
+test("validates upstream status, HTML MIME type, and identity encoding", () => {
+  assert.equal(validateUpstreamHeaders(200, { "content-type": "text/html; charset=utf-8" }), true);
+  assert.equal(validateUpstreamHeaders(200, { "content-type": "application/xhtml+xml", "content-encoding": "identity" }), true);
+
+  for (const headers of [
+    {},
+    { "content-type": "application/json" },
+    { "content-type": "text/plain" },
+  ]) {
+    assert.throws(() => validateUpstreamHeaders(200, headers), /content_type_blocked/);
+  }
+
+  for (const encoding of ["gzip", "br", "deflate", "GZIP"]) {
+    assert.throws(() => validateUpstreamHeaders(200, {
+      "content-type": "text/html",
+      "content-encoding": encoding,
+    }), /content_encoding_blocked/);
+  }
+
+  for (const status of [0, 199, 300, 301, 404, 500, 200.5]) {
+    assert.throws(() => validateUpstreamHeaders(status, { "content-type": "text/html" }), /upstream_status/);
+  }
+});
+
