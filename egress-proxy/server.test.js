@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { EventEmitter } from "node:events";
+import { Readable } from "node:stream";
 import { fetchPublicHtml, isGloballyRoutable, validateTargetUrl, validateUpstreamHeaders, EgressError, createServer } from "./server.js";
 
 test("only globally routable IPs pass the maintained IP classifier", () => {
@@ -236,6 +238,40 @@ test("rejects redirect schemes and non-standard ports", async () => {
     }), /blocked_redirect/);
     assert.equal(requests, 1);
   }
+});
+
+test("HTTPS transport pins the validated address while retaining the original TLS hostname", async () => {
+  let captured;
+  const transportImpl = {
+    request(options, callback) {
+      captured = options;
+      options.lookup(options.hostname, {}, (error, address, family) => {
+        assert.ifError(error);
+        assert.equal(address, "8.8.8.8");
+        assert.equal(family, 4);
+      });
+      const req = new EventEmitter();
+      req.end = () => {
+        const res = new Readable({ read() {} });
+        res.statusCode = 200;
+        res.headers = { "content-type": "text/html; charset=utf-8", "content-encoding": "identity" };
+        callback(res);
+        res.push("<html>ok</html>");
+        res.push(null);
+      };
+      req.destroy = (error) => { if (error) req.emit("error", error); };
+      return req;
+    }
+  };
+  const result = await fetchPublicHtml("https://public-example.com/", {
+    resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+    transportImpl
+  });
+  assert.equal(result.html, "<html>ok</html>");
+  assert.equal(captured.hostname, "public-example.com");
+  assert.equal(captured.servername, "public-example.com");
+  assert.equal(captured.rejectUnauthorized, true);
+  assert.equal(captured.agent, false);
 });
 
 test("a stalled DNS resolver is bounded by the request deadline", async () => {
