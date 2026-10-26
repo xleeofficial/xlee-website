@@ -65,7 +65,7 @@ test("scan fails closed when the trusted egress proxy is not configured", async 
   try {
     const response = await worker.fetch(
       request("https://worker.example/api/scan", { url: "https://shop.example.com/product", turnstileToken: TOKEN }),
-      { TURNSTILE_SECRET_KEY: SECRET }
+      { TURNSTILE_SECRET_KEY: SECRET, TURNSTILE_EXPECTED_ACTION: "scan" }
     );
     assert.equal(response.status, 422);
     const error = (await response.json()).error;
