@@ -378,6 +378,38 @@ test("HTTP endpoint rejects unsupported content types and malformed JSON", async
 });
 
 
+test("HTTP endpoint rate-limits a peer and sends Retry-After", async () => {
+  let fetchCalls = 0;
+  const server = createServer({
+    token: "test-secret",
+    rateLimitMax: 1,
+    rateLimitWindowMs: 60_000,
+    resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+    requestImpl: async () => {
+      fetchCalls++;
+      return { status: 200, html: "<html>ok</html>" };
+    },
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const endpoint = `http://127.0.0.1:${server.address().port}/fetch`;
+  const options = {
+    method: "POST",
+    headers: { authorization: "Bearer test-secret", "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://public-example.com/" }),
+  };
+  try {
+    const first = await fetch(endpoint, options);
+    assert.equal(first.status, 200);
+    const limited = await fetch(endpoint, options);
+    assert.equal(limited.status, 429);
+    assert.equal(limited.headers.get("retry-after"), "60");
+    assert.deepEqual(await limited.json(), { error: "rate_limited" });
+    assert.equal(fetchCalls, 1, "rate-limited requests must not trigger upstream fetches");
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
 test("oversized request body receives a complete 413 JSON response", async () => {
   const server = createServer({ token: "test-secret" });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
