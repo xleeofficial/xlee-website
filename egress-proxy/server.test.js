@@ -100,6 +100,41 @@ test("real transport destroys an upstream redirect response without draining its
   ]);
 });
 
+test("real transport enforces an absolute deadline against slow-drip HTML", async (t) => {
+  let interval;
+  const upstream = http.createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-encoding": "identity" });
+    res.write("<html>");
+    interval = setInterval(() => {
+      if (!res.destroyed) res.write("x");
+    }, 60);
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  t.after(async () => {
+    if (interval) clearInterval(interval);
+    for (const socket of upstream.closeAllConnections ? [] : []) socket.destroy();
+    await new Promise((resolve) => upstream.close(() => resolve()));
+  });
+  const transportImpl = {
+    request(options, callback) {
+      return http.request({
+        ...options,
+        hostname: "127.0.0.1",
+        port: upstream.address().port,
+        lookup: undefined,
+        agent: false,
+      }, callback);
+    },
+  };
+  const started = Date.now();
+  await assert.rejects(fetchPublicHtml("http://slow-drip-example.com/", {
+    resolver: async () => [{ address: "93.184.216.34", family: 4 }],
+    transportImpl,
+    timeoutMs: 300,
+  }), /upstream_timeout/);
+  assert.ok(Date.now() - started < 1500, "absolute deadline should terminate a slow-drip response promptly");
+});
+
 test("blocks a redirect to a private IP before any second connection", async () => {
   let calls = 0;
   await assert.rejects(fetchPublicHtml("https://start-example.com/", {
