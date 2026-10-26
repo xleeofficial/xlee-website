@@ -26,6 +26,17 @@ export function isGloballyRoutable(address) {
   } catch { return false; }
 }
 
+export function validateUpstreamHeaders(status, headers = {}) {
+  if (!Number.isInteger(status) || status < 200 || status >= 300) {
+    throw new EgressError("upstream_status");
+  }
+  const type = String(headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+  const encoding = String(headers["content-encoding"] || "identity").trim().toLowerCase();
+  if (!HTML_TYPES.has(type)) throw new EgressError("content_type_blocked");
+  if (encoding !== "identity") throw new EgressError("content_encoding_blocked");
+  return true;
+}
+
 export function validateTargetUrl(raw) {
   if (typeof raw !== "string" || raw.length > 2048) throw new EgressError("invalid_url");
   let url;
@@ -92,11 +103,14 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl } = {}) {
         resolve({ status, location, html: "" });
         return;
       }
-      const type = String(res.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
-      const encoding = String(res.headers["content-encoding"] || "identity").toLowerCase();
-      if (status < 200 || status >= 300) { res.on("end", () => clearTimeout(deadlineTimer)); res.resume(); reject(new EgressError("upstream_status")); return; }
-      if (!HTML_TYPES.has(type)) { res.on("end", () => clearTimeout(deadlineTimer)); res.resume(); reject(new EgressError("content_type_blocked")); return; }
-      if (encoding !== "identity") { res.on("end", () => clearTimeout(deadlineTimer)); res.resume(); reject(new EgressError("content_encoding_blocked")); return; }
+      try {
+        validateUpstreamHeaders(status, res.headers);
+      } catch (error) {
+        res.on("end", () => clearTimeout(deadlineTimer));
+        res.resume();
+        reject(error);
+        return;
+      }
       const chunks = [];
       let total = 0;
       res.on("data", (chunk) => {
