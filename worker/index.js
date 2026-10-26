@@ -44,9 +44,8 @@ async function fetchPublicHtml(initialUrl, env) {
   validatePublicUrl(initialUrl.href);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  let response;
   try {
-    response = await fetch(proxyUrl.href, {
+    const response = await fetch(proxyUrl.href, {
       method: "POST",
       redirect: "error",
       signal: controller.signal,
@@ -57,35 +56,36 @@ async function fetchPublicHtml(initialUrl, env) {
       },
       body: JSON.stringify({ url: initialUrl.href, maxBytes: MAX_HTML_BYTES, maxRedirects: 3, timeoutMs: TIMEOUT_MS })
     });
-  } finally { clearTimeout(timer); }
-  if (!response.ok) throw new Error("Secure page-fetch service returned HTTP " + response.status + ".");
-  const type = (response.headers.get("content-type") || "").toLowerCase();
-  if (type.split(";")[0].trim() !== "application/json") throw new Error("Secure page-fetch service returned an unexpected response type.");
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("Secure page-fetch service returned an empty response.");
-  const chunks = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > MAX_HTML_BYTES + 8192) { await reader.cancel(); throw new Error("Secure page-fetch response is too large."); }
-      chunks.push(value);
+    if (!response.ok) throw new Error("Secure page-fetch service returned HTTP " + response.status + ".");
+    const type = (response.headers.get("content-type") || "").toLowerCase();
+    if (type.split(";")[0].trim() !== "application/json") throw new Error("Secure page-fetch service returned an unexpected response type.");
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("Secure page-fetch service returned an empty response.");
+    const chunks = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_HTML_BYTES + 8192) { await reader.cancel(); throw new Error("Secure page-fetch response is too large."); }
+        chunks.push(value);
+      }
+    } finally { try { reader.releaseLock(); } catch {} }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    let result;
+    try { result = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new Error("Secure page-fetch service returned invalid JSON."); }
+    if (typeof result.html !== "string" || result.html.length > MAX_HTML_BYTES || typeof result.finalUrl !== "string" || !Number.isInteger(result.status)) {
+      throw new Error("Secure page-fetch service returned an invalid page payload.");
     }
-  } finally { try { reader.releaseLock(); } catch {} }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-  let result;
-  try { result = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new Error("Secure page-fetch service returned invalid JSON."); }
-  if (typeof result.html !== "string" || result.html.length > MAX_HTML_BYTES || typeof result.finalUrl !== "string" || !Number.isInteger(result.status)) {
-    throw new Error("Secure page-fetch service returned an invalid page payload.");
+    const finalUrl = validatePublicUrl(result.finalUrl);
+    if (result.status < 200 || result.status >= 300) throw new Error("The target page returned HTTP " + result.status + ".");
+    return { html: result.html, finalUrl: finalUrl.href, status: result.status };
+  } finally {
+    clearTimeout(timer);
   }
-  const finalUrl = validatePublicUrl(result.finalUrl);
-  if (result.status < 200 || result.status >= 300) throw new Error("The target page returned HTTP " + result.status + ".");
-  return { html: result.html, finalUrl: finalUrl.href, status: result.status };
-}
 
 function decodeEntities(value) {
   return value.replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&#x([\da-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)));
