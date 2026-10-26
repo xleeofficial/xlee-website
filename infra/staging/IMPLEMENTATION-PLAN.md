@@ -18,6 +18,18 @@ Before writing deployable service/IAM resources, choose and review one of these 
 
 No option is approved until the exact authentication flow is tested end to end.
 
+## Authentication decision update — provider-hostname constraint
+
+Official Cloud Run ingress documentation distinguishes the default public `run.app` endpoint from an ingress path fronted by an external Application Load Balancer. The documented `internal-and-cloud-load-balancing` mode allows internet traffic through that load balancer while blocking direct internet access to the `run.app` URL; IAM authentication remains a separate control. See [Cloud Run ingress restrictions](https://docs.cloud.google.com/run/docs/securing/ingress).
+
+This creates a concrete design trade-off under the current constraint to use a provider-issued HTTPS hostname without changing DNS:
+
+- **Direct `run.app` + Cloud Run IAM:** preserves the provider hostname, but Worker must obtain a Google-signed ID token. Workload Identity Federation can avoid a static Google service-account key, but needs a trusted external OIDC identity provider and a tested token-exchange flow. It is not yet implemented or proven for this Worker.
+- **Load balancer + restricted Cloud Run ingress:** gives a stronger network boundary and can prevent direct internet bypass to the origin, but introduces additional resources/cost and may require a load-balancer hostname/certificate arrangement that does not fit the no-DNS-change requirement. Do not assume it fits the budget.
+- **Direct public `run.app` + staging bearer token:** the simplest proof path, but the endpoint remains internet-reachable and relies on application authentication. This is a documented trade-off, not the preferred final security posture and not equivalent to Cloud Run IAM.
+
+**Current recommendation:** do not provision yet. First make a small, isolated proof of the external-identity/token flow for the first option and estimate its operational complexity. If that cannot be proven without a static Google service-account key, explicitly compare the public bearer-token staging fallback against the cost and DNS implications of a load balancer. No option is approved by this note.
+
 ## Proposed network boundary
 
 - Dedicated VPC and dedicated subnet for staging only.
