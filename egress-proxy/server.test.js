@@ -405,8 +405,11 @@ test("HTTP endpoint rate-limits a peer and sends Retry-After", async () => {
   try {
     const first = await fetch(endpoint, options);
     assert.equal(first.status, 200);
-    const limited = await fetch(endpoint, options);
-    assert.equal(limited.status, 429);
+    const limited = await fetch(endpoint, {
+      ...options,
+      headers: { ...options.headers, "x-forwarded-for": "203.0.113.7" },
+    });
+    assert.equal(limited.status, 429, "caller-controlled forwarding headers must not bypass the peer limit");
     assert.equal(limited.headers.get("retry-after"), "60");
     assert.deepEqual(await limited.json(), { error: "rate_limited" });
     assert.equal(fetchCalls, 1, "rate-limited requests must not trigger upstream fetches");
