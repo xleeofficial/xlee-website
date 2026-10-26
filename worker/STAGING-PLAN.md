@@ -67,6 +67,11 @@ Before selecting a host, answer these with vendor documentation or a tested proo
 
 A platform that cannot enforce the required outbound network policy is not suitable for this security-sensitive proxy without an additional egress firewall/gateway.
 
+## Infrastructure design artifacts
+
+- [Authentication and egress decisions](../infra/staging/AUTH-AND-EGRESS-DECISIONS.md) records the current staging-only auth proposal, network boundary and budget caveats.
+- [Terraform review scaffold](../infra/staging/terraform/README.md) is guarded by default and is not validated or approved to apply. It intentionally omits Cloud Run, IAM, service accounts, secrets and image deployment.
+
 ## Explicit non-goals
 
 This plan does not deploy a Worker or proxy, publish a container, create cloud resources, add secrets, edit DNS/CNAME records, alter GitHub Pages, change production settings, or merge the draft PR. Each such action requires separate review and approval.
