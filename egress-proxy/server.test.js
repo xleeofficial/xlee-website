@@ -403,8 +403,13 @@ test("HTTP endpoint rate-limits a peer and sends Retry-After", async () => {
     body: JSON.stringify({ url: "https://public-example.com/" }),
   };
   try {
+    const unauthorized = await fetch(endpoint, {
+      ...options,
+      headers: { ...options.headers, authorization: "Bearer wrong-secret" },
+    });
+    assert.equal(unauthorized.status, 401);
     const first = await fetch(endpoint, options);
-    assert.equal(first.status, 200);
+    assert.equal(first.status, 200, "unauthenticated requests must not consume the authorized fetch quota");
     const limited = await fetch(endpoint, {
       ...options,
       headers: { ...options.headers, "x-forwarded-for": "203.0.113.7" },
