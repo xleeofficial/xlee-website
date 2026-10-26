@@ -109,3 +109,52 @@ test("HTTP endpoint requires bearer authentication and returns only bounded fetc
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });
+
+
+test("blocks a redirect hostname when its DNS resolves to a private address", async () => {
+  const resolvedHosts = [];
+  let requests = 0;
+  await assert.rejects(fetchPublicHtml("https://start-example.com/", {
+    resolver: async (host) => {
+      resolvedHosts.push(host);
+      return host === "start-example.com"
+        ? [{ address: "8.8.8.8", family: 4 }]
+        : [{ address: "10.10.0.8", family: 4 }];
+    },
+    requestImpl: async () => {
+      requests++;
+      return { status: 302, location: "https://redirect-example.com/private", html: "" };
+    },
+  }), /non_public_dns_answer/);
+  assert.deepEqual(resolvedHosts, ["start-example.com", "redirect-example.com"]);
+  assert.equal(requests, 1, "must not connect to the redirect destination");
+});
+
+test("rejects redirect schemes and non-standard ports", async () => {
+  for (const location of [
+    "file:///etc/passwd",
+    "gopher://redirect-example.com/",
+    "https://redirect-example.com:9443/",
+    "//127.0.0.1/admin",
+  ]) {
+    let requests = 0;
+    await assert.rejects(fetchPublicHtml("https://start-example.com/", {
+      resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+      requestImpl: async () => {
+        requests++;
+        return { status: 302, location, html: "" };
+      },
+    }), /blocked_redirect/);
+    assert.equal(requests, 1);
+  }
+});
+
+test("a stalled DNS resolver is bounded by the request deadline", async () => {
+  const started = Date.now();
+  await assert.rejects(fetchPublicHtml("https://start-example.com/", {
+    timeoutMs: 100,
+    resolver: async () => new Promise(() => {}),
+    requestImpl: async () => assert.fail("must not request after DNS timeout"),
+  }), /dns_timeout/);
+  assert.ok(Date.now() - started < 1000, "DNS timeout should fail promptly");
+});
