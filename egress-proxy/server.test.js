@@ -6,6 +6,18 @@ test("only globally routable IPs pass the maintained IP classifier", () => {
   for (const ip of ["127.0.0.1", "10.0.0.1", "169.254.169.254", "192.168.1.2", "0.0.0.0", "100.64.0.1", "192.0.2.1", "198.18.0.1", "198.51.100.2", "203.0.113.2", "240.0.0.1", "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1", "2001:db8::1", "ff02::1"]) {
     assert.equal(isGloballyRoutable(ip), false, ip);
   }
+  // Special-use IPv6 transition/translation ranges must not be treated as
+  // ordinary public destinations; some can encode otherwise non-public IPv4.
+  for (const ip of [
+    "64:ff9b::a00:1",       // well-known NAT64 prefix carrying 10.0.0.1
+    "2002:c0a8:0101::1",    // 6to4 address encoding 192.168.1.1
+    "2001::1",              // Teredo range
+    "2001:db8:abcd::1",     // documentation
+    "100::1",               // discard-only
+    "2001:20::1",           // ORCHIDv2 special-purpose
+  ]) {
+    assert.equal(isGloballyRoutable(ip), false, ip);
+  }
   assert.equal(isGloballyRoutable("8.8.8.8"), true);
   assert.equal(isGloballyRoutable("2606:4700:4700::1111"), true);
 });
