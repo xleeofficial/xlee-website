@@ -106,6 +106,10 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl } = {}) {
       res.on("end", () => resolve({ status, html: Buffer.concat(chunks).toString("utf8") }));
       res.on("error", () => reject(new EgressError("upstream_read_failed")));
     });
+    // Enforce an absolute per-hop deadline as well as socket inactivity timeout,
+    // so a peer cannot keep the request alive indefinitely by drip-feeding bytes.
+    const deadlineTimer = setTimeout(() => req.destroy(new EgressError("upstream_timeout")), timeoutMs);
+    req.on("close", () => clearTimeout(deadlineTimer));
     req.on("timeout", () => req.destroy(new EgressError("upstream_timeout")));
     req.on("error", (error) => reject(error instanceof EgressError ? error : new EgressError("upstream_request_failed")));
     req.end();
@@ -129,7 +133,12 @@ export async function fetchPublicHtml(rawUrl, {
   for (let hop = 0; ; hop++) {
     if (Date.now() >= deadline) throw new EgressError("total_timeout");
     // Resolve and validate every hop; the validated address is pinned to the connection.
-    const pinned = await resolveAndPin(current.hostname, resolver);
+    const remainingBeforeDns = Math.max(1, deadline - Date.now());
+    let dnsTimer;
+    const pinned = await Promise.race([
+      resolveAndPin(current.hostname, resolver),
+      new Promise((_, reject) => { dnsTimer = setTimeout(() => reject(new EgressError("dns_timeout")), remainingBeforeDns); }),
+    ]).finally(() => clearTimeout(dnsTimer));
     const remaining = Math.max(1, deadline - Date.now());
     const result = await requestPinned(current, pinned, {
       timeoutMs: remaining,
