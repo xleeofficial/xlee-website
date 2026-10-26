@@ -5,7 +5,7 @@ This is a separate Node.js service implementing the Worker contract in `worker/E
 ## Run locally
 
 - Node.js 20+
-- Install: `npm install`
+- Install the locked dependency tree: `npm ci`
 - Test: `npm test`
 - Run: `SAFE_FETCH_PROXY_TOKEN=<long-random-secret> npm start`
 
