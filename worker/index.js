@@ -237,7 +237,16 @@ async function runPageSpeed(url, key) {
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-origin": ALLOWED_ORIGINS.has(origin) ? origin : "null", "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "Content-Type", "access-control-max-age": "86400", "vary": "Origin" } });
+    if (request.method === "OPTIONS") {
+      if (!ALLOWED_ORIGINS.has(origin)) return new Response(null, { status: 403, headers: { "vary": "Origin" } });
+      return new Response(null, { status: 204, headers: {
+        "access-control-allow-origin": origin,
+        "access-control-allow-methods": "POST, OPTIONS",
+        "access-control-allow-headers": "Content-Type",
+        "access-control-max-age": "86400",
+        "vary": "Origin"
+      } });
+    }
     const path = new URL(request.url).pathname;
     if (path === "/health" && request.method === "GET") return json({ ok: true, service: "xlee-lens-api", version: "0.1.0" }, 200, origin);
     if (path !== "/api/scan") return json({ error: "Not found" }, 404, origin);
