@@ -197,16 +197,53 @@ function safeEqual(a, b) {
   return left.length === right.length && left.length > 0 && timingSafeEqual(left, right);
 }
 
-function send(res, status, body) {
+function createRateLimiter({ maxRequests = 60, windowMs = 60_000, maxEntries = 10_000 } = {}) {
+  if (!Number.isInteger(maxRequests) || maxRequests < 1 ||
+      !Number.isInteger(windowMs) || windowMs < 1000 ||
+      !Number.isInteger(maxEntries) || maxEntries < 1) {
+    throw new Error("Invalid rate-limit configuration");
+  }
+  const buckets = new Map();
+  let lastPrune = 0;
+  return {
+    consume(key, now = Date.now()) {
+      if (now - lastPrune >= windowMs || buckets.size >= maxEntries) {
+        for (const [bucketKey, bucket] of buckets) {
+          if (now >= bucket.resetAt) buckets.delete(bucketKey);
+        }
+        lastPrune = now;
+      }
+      let bucket = buckets.get(key);
+      if (!bucket || now >= bucket.resetAt) {
+        if (!bucket && buckets.size >= maxEntries) {
+          return { allowed: false, retryAfter: Math.max(1, Math.ceil(windowMs / 1000)) };
+        }
+        bucket = { count: 0, resetAt: now + windowMs };
+        buckets.set(key, bucket);
+      }
+      if (bucket.count >= maxRequests) {
+        return { allowed: false, retryAfter: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)) };
+      }
+      bucket.count++;
+      return { allowed: true, retryAfter: 0 };
+    },
+  };
+}
+
+function send(res, status, body, extraHeaders = {}) {
   const data = Buffer.from(JSON.stringify(body));
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": data.length, "cache-control": "no-store", "x-content-type-options": "nosniff" });
+  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": data.length, "cache-control": "no-store", "x-content-type-options": "nosniff", ...extraHeaders });
   res.end(data);
 }
 
-export function createServer({ token = process.env.SAFE_FETCH_PROXY_TOKEN, resolver = dnsLookup, requestImpl } = {}) {
+export function createServer({ token = process.env.SAFE_FETCH_PROXY_TOKEN, resolver = dnsLookup, requestImpl, rateLimitMax = 60, rateLimitWindowMs = 60_000, rateLimitMaxEntries = 10_000 } = {}) {
+  const rateLimiter = createRateLimiter({ maxRequests: rateLimitMax, windowMs: rateLimitWindowMs, maxEntries: rateLimitMaxEntries });
   const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: true, service: "xlee-lens-egress" });
     if (req.method !== "POST" || req.url !== "/fetch") return send(res, 404, { error: "not_found" });
+    // Use the direct peer address; do not trust caller-controlled X-Forwarded-For.
+    const rate = rateLimiter.consume(req.socket.remoteAddress || "unknown");
+    if (!rate.allowed) return send(res, 429, { error: "rate_limited" }, { "retry-after": String(rate.retryAfter) });
     if (!token || !safeEqual(req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : "", token)) {
       return send(res, 401, { error: "unauthorized" });
     }
