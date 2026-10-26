@@ -1,8 +1,8 @@
 FROM node:22-alpine
 ENV NODE_ENV=production PORT=8080
 WORKDIR /app
-COPY package.json ./
-RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY server.js ./
 USER node
 EXPOSE 8080
