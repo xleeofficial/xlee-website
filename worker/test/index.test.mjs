@@ -313,3 +313,22 @@ test("fails closed when the expected Turnstile action is not configured", async 
     assert.equal(proxyCalled, false);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+test("CORS preflight only permits the two configured website origins", async () => {
+  const allowed = await worker.fetch(new Request("https://worker.example/api/scan", {
+    method: "OPTIONS",
+    headers: { Origin: ORIGIN, "Access-Control-Request-Method": "POST" }
+  }), {});
+  assert.equal(allowed.status, 204);
+  assert.equal(allowed.headers.get("access-control-allow-origin"), ORIGIN);
+
+  for (const origin of ["https://attacker.example", "null"]) {
+    const denied = await worker.fetch(new Request("https://worker.example/api/scan", {
+      method: "OPTIONS",
+      headers: { Origin: origin, "Access-Control-Request-Method": "POST" }
+    }), {});
+    assert.equal(denied.status, 403, origin);
+    assert.equal(denied.headers.get("access-control-allow-origin"), null, origin);
+  }
+});
