@@ -24,11 +24,14 @@ test("Worker and egress proxy interoperate over the local HTTP contract adapter"
   const proxy = createServer({
     token: PROXY_TOKEN,
     resolver: async (hostname) => {
-      assert.equal(hostname, "shop.example.com");
-      return [{ address: "93.184.216.34", family: 4 }];
+      assert.ok(["shop.example.com", "cdn.example.com"].includes(hostname), hostname);
+      return [{ address: hostname === "shop.example.com" ? "93.184.216.34" : "1.1.1.1", family: 4 }];
     },
     requestImpl: async (url, pinned, limits) => {
       upstreamRequests.push({ url: url.href, pinned, limits });
+      if (upstreamRequests.length === 1) {
+        return { status: 302, location: "https://cdn.example.com/final", html: "" };
+      }
       return { status: 200, html: HTML };
     },
     rateLimitMax: 10
@@ -74,6 +77,11 @@ test("Worker and egress proxy interoperate over the local HTTP contract adapter"
       assert.equal(init.method, "POST");
       assert.equal(init.redirect, "error");
       assert.equal(init.headers.authorization, `Bearer ${PROXY_TOKEN}`);
+      const payload = JSON.parse(init.body);
+      assert.equal(payload.url, "https://shop.example.com/product");
+      assert.equal(payload.maxBytes, 1_500_000);
+      assert.equal(payload.maxRedirects, 3);
+      assert.equal(payload.timeoutMs, 12_000);
       return originalFetch(localProxyUrl, init);
     }
     throw new Error(`Unexpected outbound request in integration test: ${url}`);
@@ -92,13 +100,14 @@ test("Worker and egress proxy interoperate over the local HTTP contract adapter"
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.ok, true);
-  assert.equal(body.report.page.url, "https://shop.example.com/product");
+  assert.equal(body.report.page.url, "https://cdn.example.com/final");
   assert.equal(body.report.page.title, "Integration product page title");
   assert.equal(proxyCalls.length, 1);
-  assert.equal(upstreamRequests.length, 1);
+  assert.equal(upstreamRequests.length, 2);
   assert.equal(upstreamRequests[0].url, "https://shop.example.com/product");
   assert.equal(upstreamRequests[0].pinned.address, "93.184.216.34");
+  assert.equal(upstreamRequests[1].url, "https://cdn.example.com/final");
+  assert.equal(upstreamRequests[1].pinned.address, "1.1.1.1");
   assert.equal(upstreamRequests[0].limits.maxBytes, 1_500_000);
-  assert.equal(upstreamRequests[0].limits.maxRedirects, 3);
   assert.equal(upstreamRequests[0].limits.timeoutMs, 12_000);
 });
