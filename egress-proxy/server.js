@@ -98,8 +98,10 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl } = {}) {
       const status = res.statusCode || 0;
       const location = res.headers.location;
       if ([301, 302, 303, 307, 308].includes(status)) {
-        res.on("end", () => clearTimeout(deadlineTimer));
-        res.resume();
+        // Redirect bodies are never used. Destroy the response instead of
+        // draining an attacker-controlled, potentially unbounded body.
+        clearTimeout(deadlineTimer);
+        res.destroy();
         resolve({ status, location, html: "" });
         return;
       }
