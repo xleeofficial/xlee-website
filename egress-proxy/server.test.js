@@ -19,7 +19,7 @@ test("rejects literal and alternate numeric IP URL forms", () => {
 });
 
 test("rejects DNS results if any answer is non-public", async () => {
-  await assert.rejects(fetchPublicHtml("https://public.example/", {
+  await assert.rejects(fetchPublicHtml("https://public-example.com/", {
     resolver: async () => [{ address: "8.8.8.8", family: 4 }, { address: "10.0.0.2", family: 4 }],
     requestImpl: async () => { assert.fail("must not connect when any DNS answer is non-public"); },
   }), /non_public_dns_answer/);
@@ -34,20 +34,20 @@ test("pins each request to the validated DNS answer and validates every redirect
   };
   const requestImpl = async (url, pinned) => {
     requests.push({ url: url.href, pinned });
-    if (requests.length === 1) return { status: 302, location: "https://other.example/final", html: "" };
+    if (requests.length === 1) return { status: 302, location: "https://other-example.com/final", html: "" };
     return { status: 200, html: "<html>safe</html>" };
   };
-  const result = await fetchPublicHtml("https://start.example/path", { resolver, requestImpl });
-  assert.deepEqual(lookups, ["start.example", "other.example"]);
+  const result = await fetchPublicHtml("https://start-example.com/path", { resolver, requestImpl });
+  assert.deepEqual(lookups, ["start-example.com", "other-example.com"]);
   assert.equal(requests[0].pinned.address, "8.8.8.8");
   assert.equal(requests[1].pinned.address, "8.8.8.8");
-  assert.equal(result.finalUrl, "https://other.example/final");
+  assert.equal(result.finalUrl, "https://other-example.com/final");
   assert.equal(result.status, 200);
 });
 
 test("blocks a redirect to a private IP before any second connection", async () => {
   let calls = 0;
-  await assert.rejects(fetchPublicHtml("https://start.example/", {
+  await assert.rejects(fetchPublicHtml("https://start-example.com/", {
     resolver: async () => [{ address: "8.8.8.8", family: 4 }],
     requestImpl: async () => {
       calls++;
@@ -59,7 +59,7 @@ test("blocks a redirect to a private IP before any second connection", async () 
 
 test("rejects redirects beyond the configured maximum", async () => {
   let calls = 0;
-  await assert.rejects(fetchPublicHtml("https://start.example/", {
+  await assert.rejects(fetchPublicHtml("https://start-example.com/", {
     resolver: async () => [{ address: "8.8.8.8", family: 4 }],
     maxRedirects: 1,
     requestImpl: async () => { calls++; return { status: 302, location: "/next", html: "" }; },
@@ -68,10 +68,10 @@ test("rejects redirects beyond the configured maximum", async () => {
 });
 
 test("enforces byte and request limits", async () => {
-  await assert.rejects(fetchPublicHtml("https://start.example/", {
+  await assert.rejects(fetchPublicHtml("https://start-example.com/", {
     resolver: async () => [{ address: "8.8.8.8", family: 4 }],
     maxBytes: 3,
     requestImpl: async () => ({ status: 200, html: "four" }),
   }), /response_too_large/);
-  await assert.rejects(fetchPublicHtml("https://start.example/", { maxBytes: 2_000_000 }), /invalid_limits/);
+  await assert.rejects(fetchPublicHtml("https://start-example.com/", { maxBytes: 2_000_000 }), /invalid_limits/);
 });
