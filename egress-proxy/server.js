@@ -66,6 +66,7 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl } = {}) {
   if (requestImpl) return requestImpl(url, pinned, { timeoutMs, maxBytes });
   return new Promise((resolve, reject) => {
     const transport = url.protocol === "https:" ? https : http;
+    let deadlineTimer;
     const options = {
       protocol: url.protocol,
       hostname: url.hostname,
@@ -84,15 +85,16 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl } = {}) {
       const status = res.statusCode || 0;
       const location = res.headers.location;
       if ([301, 302, 303, 307, 308].includes(status)) {
+        res.on("end", () => clearTimeout(deadlineTimer));
         res.resume();
         resolve({ status, location, html: "" });
         return;
       }
       const type = String(res.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
       const encoding = String(res.headers["content-encoding"] || "identity").toLowerCase();
-      if (status < 200 || status >= 300) { res.resume(); reject(new EgressError("upstream_status")); return; }
-      if (!HTML_TYPES.has(type)) { res.resume(); reject(new EgressError("content_type_blocked")); return; }
-      if (encoding !== "identity") { res.resume(); reject(new EgressError("content_encoding_blocked")); return; }
+      if (status < 200 || status >= 300) { res.on("end", () => clearTimeout(deadlineTimer)); res.resume(); reject(new EgressError("upstream_status")); return; }
+      if (!HTML_TYPES.has(type)) { res.on("end", () => clearTimeout(deadlineTimer)); res.resume(); reject(new EgressError("content_type_blocked")); return; }
+      if (encoding !== "identity") { res.on("end", () => clearTimeout(deadlineTimer)); res.resume(); reject(new EgressError("content_encoding_blocked")); return; }
       const chunks = [];
       let total = 0;
       res.on("data", (chunk) => {
@@ -104,15 +106,14 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl } = {}) {
         }
         chunks.push(chunk);
       });
-      res.on("end", () => resolve({ status, html: Buffer.concat(chunks).toString("utf8") }));
-      res.on("error", () => reject(new EgressError("upstream_read_failed")));
+      res.on("end", () => { clearTimeout(deadlineTimer); resolve({ status, html: Buffer.concat(chunks).toString("utf8") }); });
+      res.on("error", () => { clearTimeout(deadlineTimer); reject(new EgressError("upstream_read_failed")); });
     });
     // Enforce an absolute per-hop deadline as well as socket inactivity timeout,
     // so a peer cannot keep the request alive indefinitely by drip-feeding bytes.
-    const deadlineTimer = setTimeout(() => req.destroy(new EgressError("upstream_timeout")), timeoutMs);
-    req.on("close", () => clearTimeout(deadlineTimer));
+    deadlineTimer = setTimeout(() => req.destroy(new EgressError("upstream_timeout")), timeoutMs);
     req.on("timeout", () => req.destroy(new EgressError("upstream_timeout")));
-    req.on("error", (error) => reject(error instanceof EgressError ? error : new EgressError("upstream_request_failed")));
+    req.on("error", (error) => { clearTimeout(deadlineTimer); reject(error instanceof EgressError ? error : new EgressError("upstream_request_failed")); });
     req.end();
   });
 }
