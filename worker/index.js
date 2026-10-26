@@ -135,7 +135,9 @@ function inspectHtml(html, finalUrl) {
 
 
 async function verifyTurnstile(token, request, secret, expectedAction) {
-  if (!secret) throw new Error("Service is not configured for bot protection.");
+  if (!secret || typeof expectedAction !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(expectedAction)) {
+    throw new Error("Anti-bot verification is temporarily unavailable.");
+  }
   if (typeof token !== "string" || token.length < 10 || token.length > 2048) throw new Error("Complete the anti-bot verification and try again.");
   const form = new FormData();
   form.set("secret", secret);
@@ -158,7 +160,7 @@ async function verifyTurnstile(token, request, secret, expectedAction) {
   if (typeof result.hostname !== "string" || !ALLOWED_ORIGINS.has("https://" + result.hostname.toLowerCase())) {
     throw new Error("Anti-bot verification failed. Refresh the challenge and try again.");
   }
-  if (expectedAction && result.action !== expectedAction) {
+  if (result.action !== expectedAction) {
     throw new Error("Anti-bot verification failed. Refresh the challenge and try again.");
   }
 }
