@@ -54,7 +54,7 @@ A reviewer must record the egress implementation, test results, Cloudflare rule 
 | Worker-to-proxy HTTPS | Staging request over verified TLS, including certificate/hostname validation and failure cases | **Not tested against a deployed staging service** |
 | Network egress boundary | Infrastructure rule/policy evidence denying loopback, private, link-local, metadata, and control-plane destinations | **Not verified** |
 | Service identity and secret | Private service reachability or authenticated gateway/mTLS; secret stored outside source, least privilege, rotation procedure | **Not verified** |
-| Rate limiting and quotas | Enabled edge/gateway rule for POST /api/scan, durable per-client/session quotas, concurrency cap, and threshold-crossing test | **Not configured or verified** |
+| Rate limiting and quotas | Enabled edge/gateway rule for POST /api/scan, durable per-client/session quotas, shared concurrency cap, and threshold-crossing test | **Local proxy rate/concurrency guards are tested; distributed quotas and edge rules are not configured or verified** |
 | Observability | Redacted logs, alert routing, dashboards, and a test alert; no tokens or sensitive URL query strings | **Not verified** |
 | Independent SSRF review | Reviewer identity, findings, fixes, and approval against the exact candidate commit/image | **Pending** |
 | Rollback | Named rollback procedure and a demonstrated way to disable public scans/revoke the proxy token | **Pending** |
