@@ -29,5 +29,30 @@ jobs:
           node-version: "22"
       - run: npm ci --ignore-scripts
       - run: npm test
+      - name: Run Worker security tests
+        working-directory: worker
+        run: npm test
       - name: Build container image without publishing
         run: docker build --tag xlee-lens-egress-proxy:test .
+      - name: Smoke-test the built container locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="ci-smoke-token-not-for-production"
+          docker run --detach --rm --name xlee-lens-egress-proxy-smoke \
+            --env SAFE_FETCH_PROXY_TOKEN="$token" \
+            --publish 127.0.0.1:18080:8080 \
+            xlee-lens-egress-proxy:test
+          cleanup() { docker stop xlee-lens-egress-proxy-smoke >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          healthy=0
+          for _ in $(seq 1 20); do
+            if curl --silent --fail http://127.0.0.1:18080/health >/dev/null; then healthy=1; break; fi
+            sleep 1
+          done
+          test "$healthy" = "1"
+          denied_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --request POST --header 'content-type: application/json' \
+            --data '{"url":"https://shop.example.com/"}' \
+            http://127.0.0.1:18080/fetch)"
+          test "$denied_status" = "401"
