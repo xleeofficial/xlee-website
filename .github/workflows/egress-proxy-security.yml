@@ -1,0 +1,33 @@
+name: Egress proxy SSRF security tests
+
+on:
+  push:
+    branches: [feature/xlee-lens-api]
+    paths:
+      - "egress-proxy/**"
+      - ".github/workflows/egress-proxy-security.yml"
+  pull_request:
+    branches: [feature/xlee-lens-api]
+    paths:
+      - "egress-proxy/**"
+      - ".github/workflows/egress-proxy-security.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  security-regression-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: egress-proxy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: egress-proxy/package.json
+      - run: npm install --ignore-scripts
+      - run: npm test
