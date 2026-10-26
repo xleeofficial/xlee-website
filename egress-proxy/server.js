@@ -157,12 +157,16 @@ export async function fetchPublicHtml(rawUrl, {
       resolveAndPin(current.hostname, resolver),
       new Promise((_, reject) => { dnsTimer = setTimeout(() => reject(new EgressError("dns_timeout")), remainingBeforeDns); }),
     ]).finally(() => clearTimeout(dnsTimer));
-    const remaining = Math.max(1, deadline - Date.now());
+    // A timer can be delayed by event-loop pressure; re-check the absolute deadline
+    // after DNS resolves so a late resolver result never triggers an outbound request.
+    if (Date.now() >= deadline) throw new EgressError("total_timeout");
+    const remaining = deadline - Date.now();
     const result = await requestPinned(current, pinned, {
       timeoutMs: remaining,
       maxBytes,
       requestImpl,
     });
+    if (Date.now() >= deadline) throw new EgressError("total_timeout");
     if (result.location) {
       if (hop >= maxRedirects) throw new EgressError("too_many_redirects");
       let next;
