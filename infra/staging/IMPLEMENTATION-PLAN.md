@@ -26,7 +26,7 @@ No option is approved until the exact authentication flow is tested end to end.
 - Create explicit high-priority egress-deny rules for IPv4 private ranges (RFC1918), loopback, link-local/metadata, multicast, unspecified/reserved ranges, and any organization-specific internal ranges. Maintain a reviewed inventory of special-use ranges. Validate IPv6 behavior separately; do not claim IPv6 is blocked unless it is actually routed through and governed by the chosen network policy.
 - Permit only the egress needed for DNS and public HTTPS/HTTP retrieval, with an explicitly documented policy. If a policy cannot express the necessary allow/deny boundary, stop and add a suitable egress enforcement layer rather than assuming the application checks are sufficient.
 - Use a dedicated least-privilege runtime service account with no project-wide roles. Cloud Run's metadata server is a separate consideration: verify runtime behavior and ensure any available identity has no useful privileges beyond the minimum required.
-- Configure Cloud NAT only if the chosen all-traffic route requires it for public egress; model NAT and data-transfer cost before approval.
+- Cloud NAT is included in the review scaffold for public egress. Its hourly instance/IP charges and per-GiB processing/data-transfer charges must be included in the estimate; do not assume the overall target of USD 5–15/month will be met.
 - The proxy itself must still validate every DNS answer, pin the validated IP for the actual socket, verify TLS against the original hostname, disable automatic redirects, and repeat validation for every redirect. Network rules are defense in depth, not a replacement for SSRF-safe application logic.
 
 ## Service hardening
@@ -51,9 +51,16 @@ No option is approved until the exact authentication flow is tested end to end.
 1. Select the authentication design and threat-model it.
 2. Select a region and calculate an itemized monthly estimate.
 3. Review CIDR inventories, firewall priority, IPv4/IPv6 routing and metadata behavior.
-4. Draft deployable Terraform separately, with explicit project/region inputs, least-privilege IAM, no secrets in state, and guardrails against accidental production targeting.
+4. Review the guarded, not-yet-validated scaffold in [infra/staging/terraform](./terraform/README.md). It deliberately omits Cloud Run/IAM/secrets/image deployment; complete those only after the authentication decision is approved.
 5. Run formatting, static validation, policy checks and a plan against a dedicated empty staging project only. Do not run `apply` without separate explicit approval.
 6. After separately approved provisioning, verify ingress auth, TLS, network deny rules, SSRF tests, logging redaction, alerting, rotation and rollback.
+
+## Current draft artifacts
+
+- [Authentication and egress decisions](./AUTH-AND-EGRESS-DECISIONS.md)
+- [Terraform scaffold and safety notes](./terraform/README.md)
+
+The Terraform provider is not installed in the current working environment, so `terraform fmt`, `init`, `validate`, policy checks, and plan have **not** been run. The firewall CIDR list is an initial draft, not a complete verified IANA special-use inventory. Do not apply this scaffold.
 
 ## Non-goals and stop conditions
 
