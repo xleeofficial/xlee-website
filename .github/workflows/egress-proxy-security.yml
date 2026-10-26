@@ -7,7 +7,7 @@ on:
       - "egress-proxy/**"
       - ".github/workflows/egress-proxy-security.yml"
   pull_request:
-    branches: [feature/xlee-lens-api]
+    branches: [main]
     paths:
       - "egress-proxy/**"
       - ".github/workflows/egress-proxy-security.yml"
