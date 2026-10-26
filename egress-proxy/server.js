@@ -205,9 +205,16 @@ export function createServer({ token = process.env.SAFE_FETCH_PROXY_TOKEN, resol
     const chunks = [];
     let total = 0;
     try {
-      for await (const chunk of req) {
+      // Preserve the socket long enough to flush the 413 response; do not let
+      // async-iterator cleanup destroy the IncomingMessage when we stop early.
+      for await (const chunk of req.iterator({ destroyOnReturn: false })) {
         total += chunk.length;
-        if (total > MAX_BODY_BYTES) { send(res, 413, { error: "request_too_large" }); req.destroy(); return; }
+        if (total > MAX_BODY_BYTES) {
+          send(res, 413, { error: "request_too_large" });
+          res.once("finish", () => req.destroy());
+          req.resume();
+          return;
+        }
         chunks.push(chunk);
       }
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
