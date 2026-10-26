@@ -112,7 +112,6 @@ test("real transport enforces an absolute deadline against slow-drip HTML", asyn
   await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
   t.after(async () => {
     if (interval) clearInterval(interval);
-    for (const socket of upstream.closeAllConnections ? [] : []) socket.destroy();
     await new Promise((resolve) => upstream.close(() => resolve()));
   });
   const transportImpl = {
