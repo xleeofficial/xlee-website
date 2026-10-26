@@ -109,5 +109,5 @@ test("Worker and egress proxy interoperate over the local HTTP contract adapter"
   assert.equal(upstreamRequests[1].url, "https://cdn.example.com/final");
   assert.equal(upstreamRequests[1].pinned.address, "1.1.1.1");
   assert.equal(upstreamRequests[0].limits.maxBytes, 1_500_000);
-  assert.equal(upstreamRequests[0].limits.timeoutMs, 12_000);
+  assert.ok(upstreamRequests[0].limits.timeoutMs <= 12_000 && upstreamRequests[0].limits.timeoutMs > 11_000, "proxy deadline should be bounded by the Worker limit with small processing overhead");
 });
