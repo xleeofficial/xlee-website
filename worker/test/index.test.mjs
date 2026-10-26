@@ -182,6 +182,27 @@ test("sends the target only to the authenticated trusted proxy and returns a bou
   }
 });
 
+test("malformed numeric HTML entities do not crash page inspection", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => String(url).includes("siteverify")
+    ? turnstileResponse()
+    : proxyResponse({
+        html: "<html><head><title>Product &#999999999; title</title><meta name=\"description\" content=\"Details\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"></head><body><h1>Product</h1></body></html>"
+      });
+  try {
+    const response = await worker.fetch(
+      request("https://worker.example/api/scan", { url: "https://shop.example.com/product", turnstileToken: TOKEN }),
+      env()
+    );
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.ok, true);
+    assert.match(result.report.page.title, /Product \\uFFFD title/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("rejects a proxy response whose final URL is a private IP literal", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => String(url).includes("siteverify")
