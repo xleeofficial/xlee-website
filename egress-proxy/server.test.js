@@ -70,6 +70,34 @@ test("pins each request to the validated DNS answer and validates every redirect
   assert.equal(result.status, 200);
 });
 
+test("blocks DNS rebinding when the same hostname later resolves privately", async () => {
+  let dnsCalls = 0;
+  let requestCalls = 0;
+
+  await assert.rejects(
+    fetchPublicHtml("https://rebinding-example.com/", {
+      resolver: async () => {
+        dnsCalls++;
+        return dnsCalls === 1
+          ? [{ address: "8.8.8.8", family: 4 }]
+          : [{ address: "10.0.0.7", family: 4 }];
+      },
+      requestImpl: async () => {
+        requestCalls++;
+        return {
+          status: 302,
+          location: "https://rebinding-example.com/next",
+          html: "",
+        };
+      },
+    }),
+    /non_public_dns_answer/
+  );
+
+  assert.equal(dnsCalls, 2);
+  assert.equal(requestCalls, 1);
+});
+
 test("real transport destroys an upstream redirect response without draining its body", async (t) => {
   let responseClosedResolve;
   const responseClosed = new Promise((resolve) => { responseClosedResolve = resolve; });
@@ -278,6 +306,12 @@ test("HTTPS transport pins the validated address while retaining the original TL
   assert.equal(captured.servername, "public-example.com");
   assert.equal(captured.rejectUnauthorized, true);
   assert.equal(captured.agent, false);
+  assert.deepEqual(captured.headers, {
+    "user-agent": "XLEE-Lens-Egress/0.1 (+https://xlee.uk)",
+    accept: "text/html,application/xhtml+xml;q=0.9",
+    "accept-encoding": "identity",
+    connection: "close",
+  });
 });
 
 test("a stalled DNS resolver is bounded by the request deadline", async () => {
