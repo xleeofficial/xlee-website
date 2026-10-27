@@ -43,6 +43,7 @@ function env(extra = {}) {
     TURNSTILE_SECRET_KEY: SECRET,
     TURNSTILE_EXPECTED_ACTION: "scan",
     SAFE_FETCH_PROXY_URL: "https://egress.example/fetch",
+    SAFE_FETCH_PROXY_HOST: "egress.example",
     SAFE_FETCH_PROXY_TOKEN: PROXY_TOKEN,
     ...extra
   };
@@ -85,7 +86,9 @@ test("rejects unsafe trusted-proxy URL configuration before sending the bearer t
       "https://egress.example/",
       "https://egress.example/fetch?redirect=https://attacker.example/",
       "https://egress.example/fetch#fragment",
-      "https://user:pass@egress.example/fetch"
+      "https://egress.example:8443/fetch",
+      "https://user:pass@egress.example/fetch",
+      "https://attacker.example/fetch"
     ]) {
       let proxyCalled = false;
       globalThis.fetch = async (url) => {
@@ -382,5 +385,29 @@ test("CORS preflight only permits the two configured website origins", async () 
     }), {});
     assert.equal(denied.status, 403, origin);
     assert.equal(denied.headers.get("access-control-allow-origin"), null, origin);
+  }
+});
+
+
+test("rejects a proxy URL whose hostname differs from the exact configured host", async () => {
+  const originalFetch = globalThis.fetch;
+  let proxyCalled = false;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("siteverify")) return turnstileResponse();
+    proxyCalled = true;
+    throw new Error("Proxy must not be called for an unapproved host");
+  };
+  try {
+    const response = await worker.fetch(
+      request("https://worker.example/api/scan", {
+        url: "https://shop.example.com/product",
+        turnstileToken: TOKEN
+      }),
+      env({ SAFE_FETCH_PROXY_URL: "https://attacker.example/fetch" })
+    );
+    assert.equal(response.status, 422);
+    assert.equal(proxyCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
