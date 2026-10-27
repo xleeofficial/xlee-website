@@ -58,3 +58,7 @@ The presence of secrets alone does not make the endpoint safe. The egress servic
 - No whole-store crawling, accounts, storage, scheduled monitoring, or automatic fixes.
 - Unit tests use mocked outbound services; they do not prove the egress proxy is safe.
 - A production security review and end-to-end testing remain mandatory.
+
+
+### Security configuration requirement
+The Worker requires `SAFE_FETCH_PROXY_HOST` in addition to `SAFE_FETCH_PROXY_URL` and `SAFE_FETCH_PROXY_TOKEN`. The URL must be HTTPS, use exactly the configured hostname, use path `/fetch`, and contain no port, credentials, query, or fragment. This exact-host binding prevents a misconfigured or tampered proxy URL from receiving the bearer token.
