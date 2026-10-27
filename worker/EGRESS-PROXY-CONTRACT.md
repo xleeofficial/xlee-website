@@ -47,3 +47,7 @@ Return only HTML for a successful 2xx response. Do not return response headers, 
 ## Deployment gate
 
 Do not enable public scans until the egress service has been implemented and independently tested against the cases above. The Worker failing closed without proxy configuration is intentional. A generic fetch proxy without these guarantees is not sufficient.
+
+
+### Security configuration requirement
+The Worker requires `SAFE_FETCH_PROXY_HOST` in addition to `SAFE_FETCH_PROXY_URL` and `SAFE_FETCH_PROXY_TOKEN`. The URL must be HTTPS, use exactly the configured hostname, use path `/fetch`, and contain no port, credentials, query, or fragment. This exact-host binding prevents a misconfigured or tampered proxy URL from receiving the bearer token.
