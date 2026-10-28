@@ -21,6 +21,9 @@ function validatePublicUrl(raw) {
   try { url = new URL(raw); } catch { throw new Error("Enter a valid URL."); }
   if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Only HTTP and HTTPS URLs are supported.");
   if (url.username || url.password) throw new Error("URLs containing credentials are not allowed.");
+  // Match the egress service's fixed-port policy before spending a Turnstile
+  // verification request. WHATWG URL normalizes explicit default ports away.
+  if (url.port) throw new Error("Only standard HTTP and HTTPS ports are supported.");
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (!host.includes(".") || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".test") || host.endsWith(".invalid") || host.endsWith(".onion") || host.endsWith(".example")) throw new Error("Use a public website hostname.");
   // Reject IP literals, including IPv6 literals. Public-domain DNS resolution is still enforced by the Worker network.
