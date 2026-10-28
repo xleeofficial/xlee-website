@@ -476,3 +476,79 @@ test("oversized request body receives a complete 413 JSON response", async () =>
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });
+
+
+test("real transport closes rejected upstream responses instead of draining an unbounded body", async () => {
+  for (const scenario of [
+    { status: 403, headers: { "content-type": "text/html" }, code: "upstream_status" },
+    { status: 200, headers: { "content-type": "application/json" }, code: "content_type_blocked" },
+    { status: 200, headers: { "content-type": "text/html", "content-encoding": "gzip" }, code: "content_encoding_blocked" },
+  ]) {
+    let signalClosed;
+    const closed = new Promise((resolve) => { signalClosed = resolve; });
+    const upstream = http.createServer((_req, res) => {
+      res.writeHead(scenario.status, scenario.headers);
+      res.write("attacker-controlled response body");
+      res.on("close", signalClosed);
+      // Intentionally never end: draining this response would waste a socket.
+    });
+    await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+    const transportImpl = {
+      request(options, callback) {
+        return http.request({
+          ...options, hostname: "127.0.0.1", port: upstream.address().port,
+          lookup: undefined, agent: false,
+        }, callback);
+      },
+    };
+    try {
+      await assert.rejects(fetchPublicHtml("http://public-example.com/", {
+        resolver: async () => [{ address: "93.184.216.34", family: 4 }],
+        transportImpl,
+        timeoutMs: 2000,
+      }), (error) => error instanceof EgressError && error.code === scenario.code);
+      await Promise.race([
+        closed,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("rejected upstream body was not closed promptly")), 700)),
+      ]);
+    } finally {
+      upstream.closeAllConnections();
+      await new Promise((resolve) => upstream.close(resolve));
+    }
+  }
+});
+
+test("real transport preserves the byte-limit error and closes an oversized upstream body", async () => {
+  let signalClosed;
+  const closed = new Promise((resolve) => { signalClosed = resolve; });
+  const upstream = http.createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/html", "content-encoding": "identity" });
+    res.write("x".repeat(1024));
+    res.on("close", signalClosed);
+    // A malicious server may keep streaming after crossing the size limit.
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  const transportImpl = {
+    request(options, callback) {
+      return http.request({
+        ...options, hostname: "127.0.0.1", port: upstream.address().port,
+        lookup: undefined, agent: false,
+      }, callback);
+    },
+  };
+  try {
+    await assert.rejects(fetchPublicHtml("http://public-example.com/", {
+      resolver: async () => [{ address: "93.184.216.34", family: 4 }],
+      transportImpl,
+      maxBytes: 32,
+      timeoutMs: 2000,
+    }), (error) => error instanceof EgressError && error.code === "response_too_large");
+    await Promise.race([
+      closed,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("oversized upstream body was not closed promptly")), 700)),
+    ]);
+  } finally {
+    upstream.closeAllConnections();
+    await new Promise((resolve) => upstream.close(resolve));
+  }
+});
