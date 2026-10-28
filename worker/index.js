@@ -270,10 +270,15 @@ export default {
     let body;
     try { body = await readJsonLimited(request); }
     catch (error) { return json({ error: error.message }, /too large/i.test(error.message) ? 413 : 400, origin); }
-    try { await verifyTurnstile(body.turnstileToken, request, env.TURNSTILE_SECRET_KEY, env.TURNSTILE_EXPECTED_ACTION); }
-    catch (error) { return json({ error: error.message }, 403, origin); }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return json({ error: "Expected a JSON object." }, 400, origin);
+    }
+    // Reject invalid targets locally before consuming a Turnstile verification
+    // request. No page fetch can occur until server-side verification succeeds.
     let url;
     try { url = validatePublicUrl(body.url); } catch (error) { return json({ error: error.message }, 400, origin); }
+    try { await verifyTurnstile(body.turnstileToken, request, env.TURNSTILE_SECRET_KEY, env.TURNSTILE_EXPECTED_ACTION); }
+    catch (error) { return json({ error: error.message }, 403, origin); }
     try {
       const page = await fetchPublicHtml(url, env);
       const htmlReport = inspectHtml(page.html, page.finalUrl);
