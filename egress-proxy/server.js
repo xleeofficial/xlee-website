@@ -101,6 +101,18 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl, transpor
       agent: false,
     };
     const req = transport.request(options, (res) => {
+      // A peer may terminate a response before the advertised body completes.
+      // Do not wait for the absolute deadline if the stream is already broken.
+      res.on("error", () => {
+        clearTimeout(deadlineTimer);
+        reject(new EgressError("upstream_read_failed"));
+      });
+      res.on("close", () => {
+        if (!res.complete) {
+          clearTimeout(deadlineTimer);
+          reject(new EgressError("upstream_read_failed"));
+        }
+      });
       const status = res.statusCode || 0;
       const location = res.headers.location;
       if ([301, 302, 303, 307, 308].includes(status)) {
@@ -114,9 +126,12 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl, transpor
       try {
         validateUpstreamHeaders(status, res.headers);
       } catch (error) {
-        res.on("end", () => clearTimeout(deadlineTimer));
-        res.resume();
+        // Never drain an attacker-controlled body after rejecting its headers:
+        // a peer can stream indefinitely, tying up sockets and bandwidth.
+        clearTimeout(deadlineTimer);
         reject(error);
+        res.destroy();
+        req.destroy();
         return;
       }
       const chunks = [];
@@ -124,14 +139,18 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl, transpor
       res.on("data", (chunk) => {
         total += chunk.length;
         if (total > maxBytes) {
-          req.destroy(new EgressError("response_too_large"));
+          // Settle with the precise limit error before tearing down both
+          // streams; otherwise a concurrent socket error can mask the cause.
+          clearTimeout(deadlineTimer);
+          reject(new EgressError("response_too_large"));
           res.destroy();
+          req.destroy();
           return;
         }
         chunks.push(chunk);
       });
       res.on("end", () => { clearTimeout(deadlineTimer); resolve({ status, html: Buffer.concat(chunks).toString("utf8") }); });
-      res.on("error", () => { clearTimeout(deadlineTimer); reject(new EgressError("upstream_read_failed")); });
+
     });
     // Enforce an absolute per-hop deadline as well as socket inactivity timeout,
     // so a peer cannot keep the request alive indefinitely by drip-feeding bytes.
