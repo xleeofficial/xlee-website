@@ -411,3 +411,34 @@ test("rejects a proxy URL whose hostname differs from the exact configured host"
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("rejects non-object JSON and invalid target URLs without consuming Turnstile or contacting the proxy", async () => {
+  const originalFetch = globalThis.fetch;
+  let outboundCalls = 0;
+  globalThis.fetch = async () => {
+    outboundCalls++;
+    throw new Error("Invalid input must not trigger any outbound request");
+  };
+  try {
+    for (const body of ["null", "[]", "123", "true", '"string"']) {
+      const response = await worker.fetch(new Request("https://worker.example/api/scan", {
+        method: "POST",
+        headers: { Origin: ORIGIN, "Content-Type": "application/json" },
+        body,
+      }), env());
+      assert.equal(response.status, 400, body);
+      assert.deepEqual(await response.json(), { error: "Expected a JSON object." }, body);
+    }
+    for (const url of ["http://127.0.0.1/", "file:///etc/passwd", "https://example.com:8443/"]) {
+      const response = await worker.fetch(
+        request("https://worker.example/api/scan", { url, turnstileToken: TOKEN }),
+        env()
+      );
+      assert.equal(response.status, 400, url);
+    }
+    assert.equal(outboundCalls, 0, "invalid payloads must not consume anti-bot quota or fetch pages");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
