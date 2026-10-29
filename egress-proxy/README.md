@@ -15,8 +15,9 @@ The service listens on port 8080 by default. Configure the Worker with an HTTPS 
 
 - Bearer-token authentication and strict request-body limits.
 - In-process per-peer rate limit (default 60 `/fetch` requests per minute) with `429` and `Retry-After`; this is a local guardrail, not a replacement for distributed/service-edge rate limiting.
+- In-process concurrent authenticated fetch cap (default 8, configurable via the `createServer` option `maxConcurrentFetches`) with `503` and `Retry-After`. Counts slow request uploads and DNS lookups; does not replace a shared global concurrency limit or upstream ingress policy.
 - Only HTTP/HTTPS public hostnames; rejects IP literals, credentials, nonstandard ports and local-use names.
-- Uses `ipaddr.js` classification and rejects a DNS response if any A/AAAA answer is not globally routable.
+- Uses `ipaddr.js` classification plus explicit conservative IANA special-use exclusions (including IPv4 protocol-assignment/6to4-relay ranges and IPv6 IETF/NAT64 ranges), and rejects a DNS response if any A/AAAA answer is not globally routable.
 - Pins the chosen validated DNS address in the actual socket lookup callback; TLS hostname validation/SNI remain tied to the original URL hostname.
 - Handles redirects manually, validates and resolves each hop anew, and caps redirects at three.
 - Fixed outbound headers, identity encoding only, HTML content-type allowlist, bounded streamed body, timeout, and generic caller errors.
