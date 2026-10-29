@@ -1,15 +1,15 @@
-# XLEE Lens — staging release blockers (2026-10-28)
+# XLEE Lens — staging release blockers (updated 2026-10-29)
 
 **Decision: NO-GO for public scans and production.** The Node egress proxy exists in source and its unit/in-process contract tests run in CI. This is not evidence of a deployable SSRF-safe egress boundary.
 
 ## Current implementation and checks
 
-- `egress-proxy/server.js`: per-hop DNS validation, IP classification, pinned socket lookup, manual redirects, bounded HTML response, bearer token, and in-process rate limiting.
-- `egress-proxy/server.test.js`: simulated DNS rebinding, mixed A/AAAA answers, blocked redirect destinations, and real local HTTP stream cancellation/deadlines.
+- `egress-proxy/server.js`: per-hop DNS validation, conservative IANA special-use IP exclusions, pinned socket lookup, manual redirects with HTTPS downgrade blocked, bounded HTML response, bearer token, in-process per-peer rate limiting, and an 8-request default concurrent-fetch cap.
+- `egress-proxy/server.test.js`: simulated DNS rebinding, mixed A/AAAA answers, IANA special-use destinations, HTTPS downgrade blocking, concurrent request backpressure, and real local HTTP stream cancellation/deadlines.
 - `egress-proxy/integration.test.js`: Worker/proxy authenticated JSON contract through a real local HTTP endpoint, with mocked DNS and a local adapter replacing HTTPS. **Does not validate TLS or network policy.**
 - `worker/index.js`: refuses arbitrary-host direct fetch without an exact HTTPS proxy URL/host and token; requires Turnstile verification for scans.
 - CI runs on `feature/xlee-lens-api`. Verify both workflows on the exact revision before deploying; a green test run is not production approval.
-- The existing static homepage (`index.html`, `script.js`) is not connected to the Worker API. No public scan UI has been deployed.
+- The existing static homepage (`index.html`, `script.js`) is not connected to the Worker API. No public scan UI has been deployed. The production-only Worker CORS and Turnstile hostname allowlists require a separately tested staging-origin configuration before a provider-hosted staging UI can work. See `docs/FRONTEND-API-INTEGRATION.md`.
 - No staging Wrangler configuration, provider resources, or deployed egress service are evidenced in the repository.
 
 ## Render suitability: evidence and gap
