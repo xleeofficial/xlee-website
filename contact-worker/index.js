@@ -6,7 +6,7 @@ const MAX_BYTES = 8192;
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("origin");
-    const allowed = ["https://xlee.uk", "https://www.xlee.uk"];
+    const allowed = (env.CONTACT_ALLOWED_ORIGINS || "").split(",").map(value => value.trim()).filter(Boolean);
     const cors = { "access-control-allow-origin": allowed.includes(origin) ? origin : "null", "vary": "Origin" };
     const respond = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
     if (request.method === "OPTIONS") return allowed.includes(origin) ? new Response(null, { status: 204, headers: { ...cors, "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "content-type" } }) : respond({ error: "forbidden" }, 403);
