@@ -98,7 +98,8 @@ try {
 const CONTACT_API_URL = "";
 const CONTACT_TURNSTILE_SITE_KEY = "";
 const contactForm = document.getElementById("contactForm");
-if (contactForm && CONTACT_API_URL && CONTACT_TURNSTILE_SITE_KEY && window.turnstile) {
+function initializeContactForm() {
+if (!contactForm || !CONTACT_API_URL || !CONTACT_TURNSTILE_SITE_KEY || !window.turnstile) return;
   let token = "";
   window.turnstile.render("#contactTurnstile", {
     sitekey: CONTACT_TURNSTILE_SITE_KEY, action: "contact",
@@ -123,3 +124,5 @@ if (contactForm && CONTACT_API_URL && CONTACT_TURNSTILE_SITE_KEY && window.turns
     finally { token = ""; window.turnstile.reset("#contactTurnstile"); }
   });
 }
+if (document.readyState === "complete") initializeContactForm();
+else window.addEventListener("load", initializeContactForm, { once: true });
