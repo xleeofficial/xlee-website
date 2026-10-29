@@ -3,10 +3,11 @@
 // Required variables: TURNSTILE_SITE_HOSTNAME (e.g. staging hostname), CONTACT_TO_EMAIL.
 // Never expose BREVO_API_KEY to browser code or logs.
 const MAX_BYTES = 8192;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("origin");
-    const allowed = (env.CONTACT_ALLOWED_ORIGINS || "").split(",").map(value => value.trim()).filter(Boolean);
+    const allowed = (env.CONTACT_ALLOWED_ORIGINS || "").split(",").map(value => value.trim()).filter(value => /^https:\/\/[^/]+$/.test(value));
     const cors = { "access-control-allow-origin": allowed.includes(origin) ? origin : "null", "vary": "Origin" };
     const respond = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
     if (request.method === "OPTIONS") return allowed.includes(origin) ? new Response(null, { status: 204, headers: { ...cors, "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "content-type" } }) : respond({ error: "forbidden" }, 403);
@@ -34,7 +35,7 @@ export default {
       const verification = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
       if (!verification.ok) return respond({ error: "verification_unavailable" }, 503);
       const verdict = await verification.json();
-      if (!verdict.success || verdict.hostname !== env.TURNSTILE_SITE_HOSTNAME || verdict.action !== "contact") return respond({ error: "verification_failed" }, 403);
+      if (!verdict.success || verdict.hostname !== env.TURNSTILE_SITE_HOSTNAME || verdict.action !== "contact" || (verdict.challenge_ts && Date.now() - Date.parse(verdict.challenge_ts) > 300000)) return respond({ error: "verification_failed" }, 403);
       const sent = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
         headers: { "api-key": env.BREVO_API_KEY, "content-type": "application/json" },
