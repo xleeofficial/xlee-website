@@ -552,3 +552,55 @@ test("real transport preserves the byte-limit error and closes an oversized upst
     await new Promise((resolve) => upstream.close(resolve));
   }
 });
+
+
+test("concurrent egress limit rejects excess requests and releases slots after completion", async () => {
+  let signalStarted;
+  let releaseFirst;
+  const started = new Promise((resolve) => { signalStarted = resolve; });
+  const gate = new Promise((resolve) => { releaseFirst = resolve; });
+  let upstreamCalls = 0;
+  const server = createServer({
+    token: "test-secret",
+    maxConcurrentFetches: 1,
+    resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+    requestImpl: async () => {
+      upstreamCalls++;
+      if (upstreamCalls === 1) {
+        signalStarted();
+        await gate;
+      }
+      return { status: 200, html: "<html>ok</html>" };
+    },
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const endpoint = `http://127.0.0.1:${server.address().port}/fetch`;
+  const options = {
+    method: "POST",
+    headers: { authorization: "Bearer test-secret", "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://public-example.com/" }),
+  };
+  try {
+    const first = fetch(endpoint, options);
+    await started;
+    const blocked = await fetch(endpoint, options);
+    assert.equal(blocked.status, 503);
+    assert.equal(blocked.headers.get("retry-after"), "1");
+    assert.deepEqual(await blocked.json(), { error: "busy" });
+    assert.equal(upstreamCalls, 1, "excess requests must not reach the target");
+    releaseFirst();
+    assert.equal((await first).status, 200);
+    const next = await fetch(endpoint, options);
+    assert.equal(next.status, 200, "completed requests must release their concurrency slot");
+    assert.equal(upstreamCalls, 2);
+  } finally {
+    releaseFirst();
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("concurrency limit is validated at server creation", () => {
+  for (const value of [0, -1, 1.5, 129, NaN]) {
+    assert.throws(() => createServer({ maxConcurrentFetches: value }), /Invalid concurrency configuration/);
+  }
+});
