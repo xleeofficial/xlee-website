@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker from "./index.js";
 
-const env = { BREVO_API_KEY: "test-only", TURNSTILE_SECRET_KEY: "test-only", CONTACT_TO_EMAIL: "inbox@example.com", TURNSTILE_SITE_HOSTNAME: "xlee.uk" };
+const env = { BREVO_API_KEY: "test-only", TURNSTILE_SECRET_KEY: "test-only", CONTACT_TO_EMAIL: "inbox@example.com", TURNSTILE_SITE_HOSTNAME: "xlee.uk", CONTACT_ALLOWED_ORIGINS: "https://xlee.uk" };
 const endpoint = "https://worker.example/api/contact";
 const body = { name: "Tester", email: "tester@example.com", message: "Hello from XLEE test", turnstileToken: "mock-token" };
 const req = (data, origin = "https://xlee.uk") => new Request(endpoint, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(data) });
