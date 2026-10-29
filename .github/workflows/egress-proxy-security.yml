@@ -1,6 +1,7 @@
 name: Egress proxy SSRF security tests
 
 on:
+  workflow_dispatch:
   push:
     branches: [feature/xlee-lens-api]
     paths:
