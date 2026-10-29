@@ -3,14 +3,12 @@
 // Required variables: TURNSTILE_SITE_HOSTNAME (e.g. staging hostname), CONTACT_TO_EMAIL.
 // Never expose BREVO_API_KEY to browser code or logs.
 const MAX_BYTES = 8192;
-const json = (data, status = 200) => new Response(JSON.stringify(data), {
-  status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
-});
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("origin");
     const allowed = ["https://xlee.uk", "https://www.xlee.uk"];
-    const cors = { "access-control-allow-origin": allowed.includes(origin) ? origin : "null", "vary": "Origin" };\n    const respond = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
+    const cors = { "access-control-allow-origin": allowed.includes(origin) ? origin : "null", "vary": "Origin" };
+    const respond = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
     if (request.method === "OPTIONS") return allowed.includes(origin) ? new Response(null, { status: 204, headers: { ...cors, "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "content-type" } }) : json({ error: "forbidden" }, 403);
     if (request.method !== "POST" || new URL(request.url).pathname !== "/api/contact") return respond({ error: "not_found" }, 404);
     if (!allowed.includes(origin)) return respond({ error: "forbidden" }, 403);
