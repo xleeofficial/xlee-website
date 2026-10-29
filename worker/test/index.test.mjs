@@ -442,3 +442,28 @@ test("rejects non-object JSON and invalid target URLs without consuming Turnstil
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("staging origin is denied until an explicit isolated staging allowlist is implemented", async () => {
+  const originalFetch = globalThis.fetch;
+  let outboundCalls = 0;
+  globalThis.fetch = async () => {
+    outboundCalls++;
+    throw new Error("Staging request must not trigger external calls");
+  };
+  try {
+    const stagingOrigin = "https://xlee-lens-staging.example.workers.dev";
+    const response = await worker.fetch(
+      request("https://worker.example/api/scan", {
+        url: "https://shop.example.com/product",
+        turnstileToken: TOKEN
+      }, { Origin: stagingOrigin }),
+      env()
+    );
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.get("access-control-allow-origin"), null);
+    assert.equal(outboundCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
