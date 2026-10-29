@@ -219,6 +219,8 @@ export async function fetchPublicHtml(rawUrl, {
       let next;
       try { next = validateTargetUrl(new URL(result.location, current).href); }
       catch { throw new EgressError("blocked_redirect"); }
+      // Never downgrade an HTTPS target to cleartext mid-redirect chain.
+      if (current.protocol === "https:" && next.protocol !== "https:") throw new EgressError("blocked_redirect");
       current = next;
       continue;
     }
