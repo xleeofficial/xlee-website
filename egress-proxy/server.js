@@ -17,6 +17,16 @@ const HTML_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 const LOCAL_USE_NAT64_PREFIX = ipaddr.parse("64:ff9b:1::");
 // RFC 9637 IPv6 documentation prefix; it is not a public destination.
 const DOCUMENTATION_IPV6_PREFIX = ipaddr.parse("3fff::");
+// IANA special-purpose registries include narrow exceptions that generic
+// "unicast" classifiers may allow. Fail closed on these entire ranges.
+const IANA_SPECIAL_IPV4_PREFIXES = [
+  [ipaddr.parse("192.0.0.0"), 24],     // IETF protocol assignments
+  [ipaddr.parse("192.88.99.0"), 24],   // deprecated 6to4 relay anycast
+];
+const IANA_SPECIAL_IPV6_PREFIXES = [
+  [ipaddr.parse("2001::"), 23],        // IETF protocol assignments
+  [ipaddr.parse("64:ff9b::"), 96],     // NAT64 well-known prefix
+];
 
 export class EgressError extends Error {
   constructor(code, message = code) { super(message); this.name = "EgressError"; this.code = code; }
@@ -25,8 +35,16 @@ export class EgressError extends Error {
 export function isGloballyRoutable(address) {
   try {
     const parsed = ipaddr.parse(address);
-    // Do not allow local-use NAT64, which may translate an embedded private IPv4 target.
-    if (parsed.kind() === "ipv6" && (parsed.match(LOCAL_USE_NAT64_PREFIX, 48) || parsed.match(DOCUMENTATION_IPV6_PREFIX, 20))) return false;
+    // Reject special-purpose ranges even when the library classifies an
+    // individual address as generic unicast.
+    if (parsed.kind() === "ipv4" && IANA_SPECIAL_IPV4_PREFIXES.some(([prefix, bits]) => parsed.match(prefix, bits))) return false;
+    // Do not allow NAT64 or IETF protocol-assignment ranges, which can include
+    // embedded private IPv4 destinations or non-global endpoints.
+    if (parsed.kind() === "ipv6" && (
+      parsed.match(LOCAL_USE_NAT64_PREFIX, 48) ||
+      parsed.match(DOCUMENTATION_IPV6_PREFIX, 20) ||
+      IANA_SPECIAL_IPV6_PREFIXES.some(([prefix, bits]) => parsed.match(prefix, bits))
+    )) return false;
     // ipaddr.js classifies many special-purpose and non-global ranges separately.
     return parsed.range() === "unicast";
   } catch { return false; }
