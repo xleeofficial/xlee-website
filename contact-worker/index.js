@@ -9,7 +9,7 @@ export default {
     const allowed = ["https://xlee.uk", "https://www.xlee.uk"];
     const cors = { "access-control-allow-origin": allowed.includes(origin) ? origin : "null", "vary": "Origin" };
     const respond = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
-    if (request.method === "OPTIONS") return allowed.includes(origin) ? new Response(null, { status: 204, headers: { ...cors, "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "content-type" } }) : json({ error: "forbidden" }, 403);
+    if (request.method === "OPTIONS") return allowed.includes(origin) ? new Response(null, { status: 204, headers: { ...cors, "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "content-type" } }) : respond({ error: "forbidden" }, 403);
     if (request.method !== "POST" || new URL(request.url).pathname !== "/api/contact") return respond({ error: "not_found" }, 404);
     if (!allowed.includes(origin)) return respond({ error: "forbidden" }, 403);
     if (!env.BREVO_API_KEY || !env.TURNSTILE_SECRET_KEY || !env.CONTACT_TO_EMAIL || !env.TURNSTILE_SITE_HOSTNAME) return respond({ error: "unavailable" }, 503);
@@ -46,7 +46,7 @@ export default {
           textContent: "Name: " + name.trim() + "\nEmail: " + email + "\n\n" + message.trim()
         })
       });
-      return sent.ok ? json({ ok: true }) : json({ error: "send_failed" }, 502);
+      return sent.ok ? respond({ ok: true }) : respond({ error: "send_failed" }, 502);
     } catch { return respond({ error: "unavailable" }, 503); }
   }
 };
