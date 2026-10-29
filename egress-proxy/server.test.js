@@ -604,3 +604,20 @@ test("concurrency limit is validated at server creation", () => {
     assert.throws(() => createServer({ maxConcurrentFetches: value }), /Invalid concurrency configuration/);
   }
 });
+
+
+test("IANA special-use exceptions cannot pass through generic unicast classification", async () => {
+  const denied = [
+    "192.0.0.9", "192.0.0.10", "192.0.0.170", "192.88.99.2",
+    "2001:0:ffff::1", "2001:1::1", "2001:20::1", "64:ff9b::a00:1",
+  ];
+  for (const address of denied) {
+    assert.equal(isGloballyRoutable(address), false, address);
+    let requests = 0;
+    await assert.rejects(fetchPublicHtml("https://public-example.com/", {
+      resolver: async () => [{ address, family: address.includes(":") ? 6 : 4 }],
+      requestImpl: async () => { requests++; return { status: 200, html: "<html></html>" }; },
+    }), /non_public_dns_answer/, address);
+    assert.equal(requests, 0, `blocked DNS address ${address} must never be contacted`);
+  }
+});
