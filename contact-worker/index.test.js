@@ -56,3 +56,13 @@ test("blocks mismatched Turnstile hostname", async (t) => {
   assert.equal(result.status, 403);
   assert.equal(calls.length, 1);
 });
+
+test("health endpoint reveals only readiness, not secrets", async () => {
+  const response = await worker.fetch(new Request("https://worker.example/health"), env);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.deepEqual(payload, { status: "ok", configured: true });
+  assert.ok(!JSON.stringify(payload).includes("test-only"));
+  const unconfigured = await worker.fetch(new Request("https://worker.example/health"), {});
+  assert.equal((await unconfigured.json()).configured, false);
+});
