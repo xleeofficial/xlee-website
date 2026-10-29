@@ -74,3 +74,26 @@ A generic VPC rule denying RFC1918 and link-local addresses is **not equivalent 
 | Contingency | Explicit maximum authorized spend | Must remain under $15 | Billing estimate |
 
 **No final cost figure has been verified for this exact topology.** Do not treat an earlier rough $4–14 estimate as a confirmed monthly total.
+
+
+## Public price check — 2026-10-29 (planning only)
+
+Sources checked:
+- Cloud NAT published prices: https://cloud.google.com/nat
+- Cloud Run pricing: https://cloud.google.com/run/pricing
+- Direct VPC egress: https://docs.cloud.google.com/run/docs/configuring/connecting-vpc
+- Cloud Run regional tiers: https://docs.cloud.google.com/run/docs/locations
+
+Cloud NAT lists $0.005 per public NAT IP-hour, gateway usage as $0.0014 per VM-equivalent-hour for <=32 VMs (with a distinct >32 rate), and $0.045 per GiB processed. **Cloud Run instance equivalence and minimum gateway charging require validation**; do not treat the small-instance gateway formula as a binding quote.
+
+Illustrative lower-bound NAT-only scenario: one public IP, gateway usage equivalent to one small VM for the entire interval, zero GiB traffic:
+- 24h: (0.005+0.0014)*24 = $0.1536
+- 72h: $0.4608
+- 168h: $1.0752
+- 720h: $4.6080
+
+This is **not the total staging price**, excludes NAT data processing, Cloud Run CPU/RAM/requests, internet egress, registry, logs, Worker services, taxes and any minimum/other applicable fees. If NAT remains provisioned, its IP-hours may continue accruing even while Cloud Run scales to zero. To stop ongoing proof charges, resources must be deliberately removed with user approval.
+
+Cloud Run request-based free tier (subject to billing account and regional terms): first 180,000 vCPU-seconds, 360,000 GiB-seconds and 2 million requests per month; shared across eligible services/billing account. Region us-central1 is Tier 1. Neither free-tier availability nor final bill is confirmed for this user.
+
+**Decision:** no paid provisioning until a region-specific calculator quote and verified network policy design demonstrate an acceptable spend and security outcome.
