@@ -10,6 +10,7 @@ export default {
     const allowed = (env.CONTACT_ALLOWED_ORIGINS || "").split(",").map(value => value.trim()).filter(value => /^https:\/\/[^/]+$/.test(value));
     const cors = { "access-control-allow-origin": allowed.includes(origin) ? origin : "null", "vary": "Origin" };
     const respond = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
+    if (request.method === "GET" && new URL(request.url).pathname === "/health") return respond({ status: "ok", configured: Boolean(env.BREVO_API_KEY && env.TURNSTILE_SECRET_KEY && env.CONTACT_TO_EMAIL && env.TURNSTILE_SITE_HOSTNAME && allowed.length) });
     if (request.method === "OPTIONS") return allowed.includes(origin) ? new Response(null, { status: 204, headers: { ...cors, "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "content-type" } }) : respond({ error: "forbidden" }, 403);
     if (request.method !== "POST" || new URL(request.url).pathname !== "/api/contact") return respond({ error: "not_found" }, 404);
     if (!allowed.includes(origin)) return respond({ error: "forbidden" }, 403);
