@@ -467,3 +467,49 @@ test("staging origin is denied until an explicit isolated staging allowlist is i
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("staging CORS is exact, isolated from production and rejects missing configuration", async () => {
+  const staging = "https://lens-staging.example.workers.dev";
+  const preflight = origin => new Request("https://worker.example/api/scan", {
+    method: "OPTIONS", headers: { Origin: origin, "Access-Control-Request-Method": "POST" }
+  });
+  const config = env({ XLEE_ENV: "staging", STAGING_ORIGIN: staging });
+  const allowed = await worker.fetch(preflight(staging), config);
+  assert.equal(allowed.status, 204);
+  assert.equal(allowed.headers.get("access-control-allow-origin"), staging);
+  for (const origin of [ORIGIN, "https://www.xlee.uk", "https://evil.example", staging + ".evil.example"]) {
+    const denied = await worker.fetch(preflight(origin), config);
+    assert.equal(denied.status, 403, origin);
+    assert.equal(denied.headers.get("access-control-allow-origin"), null);
+  }
+  const production = await worker.fetch(preflight(staging), env());
+  assert.equal(production.status, 403);
+  for (const bad of [undefined, "", "http://lens-staging.example.workers.dev", staging + "/", "https://xlee.uk", "https://user:pass@lens-staging.example.workers.dev"]) {
+    const e = env({ XLEE_ENV: "staging", STAGING_ORIGIN: bad });
+    const response = await worker.fetch(preflight(staging), e);
+    assert.equal(response.status, 503, String(bad));
+    assert.equal(response.headers.get("access-control-allow-origin"), null);
+  }
+});
+
+test("staging Turnstile hostname is bound to staging, not production", async () => {
+  const originalFetch = globalThis.fetch;
+  const staging = "https://lens-staging.example.workers.dev";
+  let calls = 0;
+  globalThis.fetch = async url => {
+    calls++;
+    if (String(url).includes("siteverify")) return turnstileResponse(); // production hostname must fail in staging
+    throw new Error("Proxy must not be reached with production Turnstile token");
+  };
+  try {
+    const response = await worker.fetch(
+      request("https://worker.example/api/scan", {
+        url: "https://shop.example.com/product", turnstileToken: TOKEN
+      }, { Origin: staging }),
+      env({ XLEE_ENV: "staging", STAGING_ORIGIN: staging })
+    );
+    assert.equal(response.status, 403);
+    assert.equal(calls, 1);
+  } finally { globalThis.fetch = originalFetch; }
+});
