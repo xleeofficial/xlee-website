@@ -513,3 +513,15 @@ test("staging Turnstile hostname is bound to staging, not production", async () 
     assert.equal(calls, 1);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+test("production CORS remains unchanged when staging configuration is absent", async () => {
+  for (const origin of ["https://xlee.uk", "https://www.xlee.uk"]) {
+    const response = await worker.fetch(new Request("https://worker.example/api/scan", {
+      method: "OPTIONS",
+      headers: { Origin: origin, "Access-Control-Request-Method": "POST" }
+    }), env());
+    assert.equal(response.status, 204, origin);
+    assert.equal(response.headers.get("access-control-allow-origin"), origin);
+  }
+});
