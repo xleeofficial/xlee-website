@@ -58,3 +58,36 @@ Public HTTPS destination (pinned DNS answer + SNI + valid TLS certificate)
 Compare 24h and 72h disposable proof against 30-day staging, including Cloud Run requests/CPU/RAM, Direct VPC network, NAT gateway and public IP-hours, GiB, logging, Artifact Registry and any Worker charges. The $5–15/month target is not yet a verified total. Billing alerts are not spending caps. Obtain explicit approval for any paid project/service and maximum exposure.
 
 **Decision: GO for review and CI; NO-GO for cloud creation, paid spend, or public deployment.**
+
+
+## Ingress authentication decision — review draft (2026-10-29)
+
+### Preferred end state: Cloud Run IAM authenticated invocation
+Cloud Run service must **not** grant `roles/run.invoker` to `allUsers`. A caller must provide a Google-signed ID token with the exact service audience, validated by Cloud Run IAM. Cloudflare Workers cannot directly assume a Google service-account identity merely by holding an arbitrary application bearer token. A supported, auditable Workload Identity Federation or token broker arrangement is required, and its availability, token exchange flow, credentials lifecycle and cost must be verified before claiming this is deployable.
+
+A Google service-account JSON private key stored as a long-lived Worker secret is **not recommended**. It increases blast radius and rotation burden. Do not create one as a shortcut.
+
+### Two feasible candidate paths to evaluate
+
+**A. Brokered Google IAM identity (preferred if supported and affordable):**
+1. Worker authenticates to a narrowly scoped trusted token broker via short-lived proof, not a static public credential.
+2. Broker issues/exchanges a short-lived Google ID token for the exact Cloud Run audience, with minimum `run.invoker` permissions.
+3. Cloud Run enforces IAM on every request; the proxy independently checks request schema, token/authorization as defense in depth.
+4. Verify broker is not publicly abusable, no circular dependency, replay protection, secret rotation, revocation and total monthly cost.
+5. If the broker itself requires paid always-on infrastructure or cannot be securely authenticated, reject this option.
+
+**B. Publicly reachable Cloud Run URL with application-layer authentication (fallback only, not equivalent to private ingress):**
+1. Restrict service ingress where supported; if external HTTPS is necessary, explicitly record that the *network endpoint is public*.
+2. Service requires a high-entropy staging-only bearer token on every `/fetch` request and enforces strict rate/body/time limits.
+3. Use defense in depth: ingress gateway/WAF with independent identity enforcement if feasible; rate limit and log auth failures.
+4. Test anonymous and forged requests, replay, rotation and secret leakage. **Never call this private/IAM-protected** unless it is.
+5. This option needs an explicit security exception and user approval before any deployment; it is not automatically accepted.
+
+### Decision gates
+- [ ] Verify official Cloud Run IAM invocation token rules and whether Cloudflare Worker can securely obtain a short-lived Google ID token without a long-lived Google private key.
+- [ ] Verify actual Worker-to-Run network ingress path and threat model.
+- [ ] Verify cost of broker or gateway plus Cloud Run, VPC and NAT within USD 15/month.
+- [ ] Document concrete proof of rejecting anonymous requests before public exposure.
+- [ ] Approve one model explicitly; do not switch silently from IAM to bearer-token-only.
+
+**Current ingress decision: unresolved / NO-GO for provisioning.** This is a documented choice, not a tested integration.
