@@ -18,7 +18,7 @@ test("rejects invalid form input", async () => {
 });
 
 test("fails closed when secrets are absent", async () => {
-  const result = await worker.fetch(req(body), {});
+  const result = await worker.fetch(req(body), { CONTACT_ALLOWED_ORIGINS: "https://xlee.uk" });
   assert.equal(result.status, 503);
 });
 
