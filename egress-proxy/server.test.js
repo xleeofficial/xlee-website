@@ -621,3 +621,21 @@ test("IANA special-use exceptions cannot pass through generic unicast classifica
     assert.equal(requests, 0, `blocked DNS address ${address} must never be contacted`);
   }
 });
+
+
+test("HTTPS redirects never downgrade to HTTP, including relative scheme changes", async () => {
+  for (const location of [
+    "http://public-example.com/next",
+    "http://other-example.com/next",
+  ]) {
+    let connections = 0;
+    await assert.rejects(fetchPublicHtml("https://public-example.com/", {
+      resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+      requestImpl: async () => {
+        connections++;
+        return { status: 302, location, html: "" };
+      },
+    }), /blocked_redirect/);
+    assert.equal(connections, 1, "the downgraded destination must not be contacted");
+  }
+});
