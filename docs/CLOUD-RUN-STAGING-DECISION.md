@@ -43,3 +43,34 @@ Budget: USD 5–15/month. Before creating resources, calculate region-specific C
 Disable private ingress, revoke staging-only tokens, delete disposable resources only with approval, retain redacted test evidence and final billing. Production remains untouched.
 
 **Decision:** GO for documentation, CI and preflight design. NO-GO for provisioning, public deployment, or claiming network tests passed.
+
+
+## Revised two-phase plan — 2026-10-29
+
+### Phase A — zero-resource feasibility (approved to prepare)
+1. Use **Direct VPC egress, all-traffic**, without a Serverless VPC Access connector.
+2. Determine exact behavior of firewall enforcement for both IPv4 and IPv6, including the Google metadata endpoint and implicit platform exceptions. **Do not claim that VPC firewall rules can independently block loopback**: loopback is handled locally and may never traverse the VPC. The proof must distinguish local socket rejection from network-layer rejection.
+3. Verify Cloud Run Direct VPC egress logging support and limitations. VPC Flow Logs plus in-process connected-peer telemetry can support evidence, but **flow logs alone do not prove every denied connection**. Capture effective firewall rules and controlled probes.
+4. Decide whether public internet egress requires Cloud NAT in the selected VPC topology; calculate NAT gateway hourly charges, IP charges and per-GiB processing separately. A static IP is not automatically required for the application, and NAT may still be necessary for internet access.
+5. Produce a price worksheet for `us-central1` for two distinct workloads: (a) disposable, time-boxed private proof and (b) always-available staging. Include Cloud Run CPU/RAM/request minimums, NAT hours, IP, networking, logs, image storage, and any Worker-related charges.
+6. Reject any plan exceeding USD 15/month for ongoing staging. Billing alerts are not hard caps. No provisioning without explicit approval.
+
+### Phase B — private proof (NOT APPROVED)
+After approval of exact services, cost and duration: deploy private authenticated proxy, pin image digest, apply effective deny policy, verify egress routes, run P01–P12, record actual connected IP and TLS certificate checks. If any test fails or the destination-IP enforcement is not independent, stop. Public staging is a separate later decision.
+
+### Critical proof caveat
+A generic VPC rule denying RFC1918 and link-local addresses is **not equivalent to default-deny with selective global internet allow**. Since XLEE Lens scans user-selected public domains, a strict network allowlist of arbitrary destinations is not practical without a separately controlled policy enforcement point. Phase A must establish a technically valid policy for the whole public internet address space minus special-use ranges, for both address families, or recommend a different architecture. Never add an unrestricted egress allow-all rule merely to make tests pass.
+
+### Pricing worksheet — inputs, not a quotation
+
+| Item | Temporary proof | Always-available staging | Evidence required |
+| --- | --- | --- | --- |
+| Cloud Run CPU/RAM and requests | Duration, instance size, idle policy | Monthly workload, min instances | Current regional pricing |
+| Direct VPC egress | Data volume, subnet/routing | Monthly traffic | Network billing details |
+| Cloud NAT | Gateway-hours, IP-hours, GiB processed | Full-month hours if always active | NAT region price and exact topology |
+| Logs | Retention and bytes ingested | Ongoing ingestion | Logging free tier/price |
+| Artifact Registry | Image GB-month | Image GB-month | Storage price |
+| Worker / Turnstile | Separate staging-only usage | Separate staging-only usage | Existing plan and quotas |
+| Contingency | Explicit maximum authorized spend | Must remain under $15 | Billing estimate |
+
+**No final cost figure has been verified for this exact topology.** Do not treat an earlier rough $4–14 estimate as a confirmed monthly total.
