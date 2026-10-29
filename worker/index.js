@@ -1,13 +1,27 @@
-const ALLOWED_ORIGINS = new Set(["https://xlee.uk", "https://www.xlee.uk"]);
+const PRODUCTION_ORIGINS = new Set(["https://xlee.uk", "https://www.xlee.uk"]);
+
+// Staging must be explicitly enabled and bound to one exact HTTPS origin.
+// An incomplete or malformed configuration fails closed.
+function allowedOrigins(env) {
+  if (env?.XLEE_ENV !== "staging") return PRODUCTION_ORIGINS;
+  const raw = env.STAGING_ORIGIN;
+  if (typeof raw !== "string") return new Set();
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.origin !== raw || url.username || url.password ||
+        url.port || !url.hostname || PRODUCTION_ORIGINS.has(raw)) return new Set();
+    return new Set([raw]);
+  } catch { return new Set(); }
+}
 const MAX_URL_LENGTH = 2048;
 const MAX_HTML_BYTES = 1_500_000;
 const TIMEOUT_MS = 12_000;
 const MAX_REQUEST_BYTES = 4096;
 const TURNSTILE_TIMEOUT_MS = 5000;
 
-function json(data, status = 200, origin = "") {
+function json(data, status = 200, origin = "", origins = PRODUCTION_ORIGINS) {
   const headers = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "vary": "Origin" };
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
+  if (origin && origins.has(origin)) {
     headers["access-control-allow-origin"] = origin;
     headers["access-control-allow-methods"] = "POST, OPTIONS";
     headers["access-control-allow-headers"] = "Content-Type";
@@ -150,7 +164,7 @@ function inspectHtml(html, finalUrl) {
 }
 
 
-async function verifyTurnstile(token, request, secret, expectedAction) {
+async function verifyTurnstile(token, request, secret, expectedAction, origins) {
   if (!secret || typeof expectedAction !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(expectedAction)) {
     throw new Error("Anti-bot verification is temporarily unavailable.");
   }
@@ -173,7 +187,7 @@ async function verifyTurnstile(token, request, secret, expectedAction) {
   try { result = await response.json(); }
   catch { throw new Error("Anti-bot verification is temporarily unavailable."); }
   if (!result || result.success !== true) throw new Error("Anti-bot verification failed. Refresh the challenge and try again.");
-  if (typeof result.hostname !== "string" || !ALLOWED_ORIGINS.has("https://" + result.hostname.toLowerCase())) {
+  if (typeof result.hostname !== "string" || !origins.has("https://" + result.hostname.toLowerCase())) {
     throw new Error("Anti-bot verification failed. Refresh the challenge and try again.");
   }
   if (result.action !== expectedAction) {
@@ -252,9 +266,11 @@ async function runPageSpeed(url, key) {
 
 export default {
   async fetch(request, env) {
+    const origins = allowedOrigins(env);
     const origin = request.headers.get("Origin") || "";
+    if (env?.XLEE_ENV === "staging" && origins.size === 0) return new Response(null, { status: 503 });
     if (request.method === "OPTIONS") {
-      if (!ALLOWED_ORIGINS.has(origin)) return new Response(null, { status: 403, headers: { "vary": "Origin" } });
+      if (!origins.has(origin)) return new Response(null, { status: 403, headers: { "vary": "Origin" } });
       return new Response(null, { status: 204, headers: {
         "access-control-allow-origin": origin,
         "access-control-allow-methods": "POST, OPTIONS",
@@ -264,30 +280,30 @@ export default {
       } });
     }
     const path = new URL(request.url).pathname;
-    if (path === "/health" && request.method === "GET") return json({ ok: true, service: "xlee-lens-api", version: "0.1.0" }, 200, origin);
-    if (path !== "/api/scan") return json({ error: "Not found" }, 404, origin);
-    if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, origin);
-    if (origin && !ALLOWED_ORIGINS.has(origin)) return json({ error: "Origin not allowed" }, 403);
+    if (path === "/health" && request.method === "GET") return json({ ok: true, service: "xlee-lens-api", version: "0.1.0" }, 200, origin, origins);
+    if (path !== "/api/scan") return json({ error: "Not found" }, 404, origin, origins);
+    if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, origin, origins);
+    if (origin && !origins.has(origin)) return json({ error: "Origin not allowed" }, 403);
     const contentType = request.headers.get("content-type") || "";
-    if (contentType.split(";")[0].trim().toLowerCase() !== "application/json") return json({ error: "Content-Type must be application/json" }, 415, origin);
+    if (contentType.split(";")[0].trim().toLowerCase() !== "application/json") return json({ error: "Content-Type must be application/json" }, 415, origin, origins);
     let body;
     try { body = await readJsonLimited(request); }
     catch (error) { return json({ error: error.message }, /too large/i.test(error.message) ? 413 : 400, origin); }
     if (!body || typeof body !== "object" || Array.isArray(body)) {
-      return json({ error: "Expected a JSON object." }, 400, origin);
+      return json({ error: "Expected a JSON object." }, 400, origin, origins);
     }
     // Reject invalid targets locally before consuming a Turnstile verification
     // request. No page fetch can occur until server-side verification succeeds.
     let url;
-    try { url = validatePublicUrl(body.url); } catch (error) { return json({ error: error.message }, 400, origin); }
-    try { await verifyTurnstile(body.turnstileToken, request, env.TURNSTILE_SECRET_KEY, env.TURNSTILE_EXPECTED_ACTION); }
-    catch (error) { return json({ error: error.message }, 403, origin); }
+    try { url = validatePublicUrl(body.url); } catch (error) { return json({ error: error.message }, 400, origin, origins); }
+    try { await verifyTurnstile(body.turnstileToken, request, env.TURNSTILE_SECRET_KEY, env.TURNSTILE_EXPECTED_ACTION, origins); }
+    catch (error) { return json({ error: error.message }, 403, origin, origins); }
     try {
       const page = await fetchPublicHtml(url, env);
       const htmlReport = inspectHtml(page.html, page.finalUrl);
       let performance = { available: false, reason: "PAGESPEED_API_KEY is not configured" };
       try { performance = await runPageSpeed(page.finalUrl, env.PAGESPEED_API_KEY); } catch { performance = { available: false, reason: "PageSpeed service temporarily unavailable" }; }
-      return json({ ok: true, generatedAt: new Date().toISOString(), source: "XLEE Lens preliminary scan", report: { ...htmlReport, performance } }, 200, origin);
+      return json({ ok: true, generatedAt: new Date().toISOString(), source: "XLEE Lens preliminary scan", report: { ...htmlReport, performance } }, 200, origin, origins);
     } catch (error) {
       // Never return raw upstream/proxy exceptions to callers. Keep user-correctable
       // input errors above this boundary; failures here may contain infrastructure data.
