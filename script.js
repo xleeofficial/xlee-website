@@ -95,8 +95,8 @@ try {
 
 // Contact form stays disabled until staging API and Turnstile are configured.
 // Configure these PUBLIC values only after backend review; never put secrets here.
-const CONTACT_API_URL = "";
-const CONTACT_TURNSTILE_SITE_KEY = "";
+const CONTACT_API_URL = "https://xlee-contact-staging.temoswager.workers.dev/api/contact";
+const CONTACT_TURNSTILE_SITE_KEY = "0x4AAAAAAFrs1vW4ept7k2EN";
 const contactForm = document.getElementById("contactForm");
 function initializeContactForm() {
 if (!contactForm || !CONTACT_API_URL || !CONTACT_TURNSTILE_SITE_KEY || !window.turnstile) return;
