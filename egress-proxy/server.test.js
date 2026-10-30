@@ -639,3 +639,92 @@ test("HTTPS redirects never downgrade to HTTP, including relative scheme changes
     assert.equal(connections, 1, "the downgraded destination must not be contacted");
   }
 });
+
+
+test("rejects inconsistent or malformed DNS address families before any socket is opened", async () => {
+  const badAnswers = [
+    [{ address: "8.8.8.8", family: 6 }],
+    [{ address: "2606:4700:4700::1111", family: 4 }],
+    [{ address: "8.8.8.8" }],
+    [{ address: "8.8.8.8", family: 0 }],
+    [{ address: "8.8.8.8", family: 4 }, { address: "127.0.0.1", family: 4 }],
+  ];
+  for (const answers of badAnswers) {
+    let connected = false;
+    await assert.rejects(fetchPublicHtml("https://public-example.com/", {
+      resolver: async () => answers,
+      requestImpl: async () => { connected = true; return { status: 200, html: "" }; },
+    }), /non_public_dns_answer/);
+    assert.equal(connected, false, JSON.stringify(answers));
+  }
+});
+
+test("real request path rejects a socket connected to an IP other than the DNS pin", async () => {
+  const originalRequest = http.request;
+  let socketChecked = false;
+  http.request = (_options, callback) => {
+    const req = new EventEmitter();
+    req.end = () => queueMicrotask(() => {
+      const socket = new EventEmitter();
+      socket.connecting = true;
+      socket.remoteAddress = "127.0.0.1";
+      req.emit("socket", socket);
+      socket.connecting = false;
+      socket.emit("connect");
+      socketChecked = true;
+    });
+    req.destroy = (error) => req.emit("error", error);
+    return req;
+  };
+  try {
+    await assert.rejects(fetchPublicHtml("http://public-example.com/", {
+      resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+      timeoutMs: 1000,
+    }), (error) => error instanceof EgressError && error.code === "socket_destination_mismatch");
+    assert.equal(socketChecked, true);
+  } finally {
+    http.request = originalRequest;
+  }
+});
+
+test("real request path accepts a socket matching the pinned DNS address", async () => {
+  const originalRequest = http.request;
+  let pinnedLookup;
+  http.request = (options, callback) => {
+    pinnedLookup = options.lookup;
+    const req = new EventEmitter();
+    req.end = () => queueMicrotask(() => {
+      const socket = new EventEmitter();
+      socket.connecting = true;
+      socket.remoteAddress = "::ffff:8.8.8.8";
+      req.emit("socket", socket);
+      socket.connecting = false;
+      socket.emit("connect");
+      const res = new EventEmitter();
+      res.statusCode = 200;
+      res.headers = { "content-type": "text/html", "content-encoding": "identity" };
+      callback(res);
+      queueMicrotask(() => {
+        res.emit("data", Buffer.from("<html>ok</html>"));
+        res.emit("end");
+      });
+    });
+    req.destroy = (error) => req.emit("error", error);
+    return req;
+  };
+  try {
+    const result = await fetchPublicHtml("http://public-example.com/", {
+      resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+      timeoutMs: 1000,
+    });
+    assert.equal(result.html, "<html>ok</html>");
+    assert.equal(result.finalUrl, "http://public-example.com/");
+    const lookedUp = await new Promise((resolve, reject) => {
+      pinnedLookup("public-example.com", {}, (error, address, family) =>
+        error ? reject(error) : resolve({ address, family }));
+    });
+    assert.deepEqual(lookedUp, { address: "8.8.8.8", family: 4 });
+  } finally {
+    http.request = originalRequest;
+  }
+});
