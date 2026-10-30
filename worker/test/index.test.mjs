@@ -525,3 +525,44 @@ test("production CORS remains unchanged when staging configuration is absent", a
     assert.equal(response.headers.get("access-control-allow-origin"), origin);
   }
 });
+
+
+test("unknown deployment mode fails closed for health, preflight and scans without network calls", async () => {
+  const originalFetch = globalThis.fetch;
+  let outboundCalls = 0;
+  globalThis.fetch = async () => { outboundCalls++; throw new Error("No network access allowed"); };
+  try {
+    for (const mode of ["stagng", "Production", "", null, "preview"]) {
+      const configuration = env({ XLEE_ENV: mode });
+      const requests = [
+        new Request("https://worker.example/health"),
+        new Request("https://worker.example/api/scan", {
+          method: "OPTIONS", headers: { Origin: ORIGIN, "Access-Control-Request-Method": "POST" }
+        }),
+        request("https://worker.example/api/scan", {
+          url: "https://shop.example.com/product", turnstileToken: TOKEN
+        }),
+        new Request("https://worker.example/api/scan", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: "https://shop.example.com/product", turnstileToken: TOKEN })
+        })
+      ];
+      for (const incoming of requests) {
+        const response = await worker.fetch(incoming, configuration);
+        assert.equal(response.status, 503, String(mode));
+        assert.equal(response.headers.get("access-control-allow-origin"), null);
+      }
+    }
+    assert.equal(outboundCalls, 0);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("explicit production deployment mode preserves exact production CORS", async () => {
+  for (const origin of ["https://xlee.uk", "https://www.xlee.uk"]) {
+    const response = await worker.fetch(new Request("https://worker.example/api/scan", {
+      method: "OPTIONS", headers: { Origin: origin, "Access-Control-Request-Method": "POST" }
+    }), env({ XLEE_ENV: "production" }));
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get("access-control-allow-origin"), origin);
+  }
+});
