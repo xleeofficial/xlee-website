@@ -90,7 +90,10 @@ async function resolveAndPin(hostname, resolver = dnsLookup) {
   if (!Array.isArray(answers) || answers.length === 0) throw new EgressError("dns_empty");
   // Reject mixed public/private answers rather than selecting the public answer.
   for (const answer of answers) {
-    if (!answer || !isIP(answer.address) || !isGloballyRoutable(answer.address)) {
+    // A resolver must supply a consistent address/family pair. Never pass
+    // malformed answers into the socket lookup callback.
+    if (!answer || !isIP(answer.address) || answer.family !== isIP(answer.address) ||
+        !isGloballyRoutable(answer.address)) {
       throw new EgressError("non_public_dns_answer");
     }
   }
@@ -170,6 +173,28 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl, transpor
       res.on("end", () => { clearTimeout(deadlineTimer); resolve({ status, html: Buffer.concat(chunks).toString("utf8") }); });
 
     });
+    // Verify the connected socket itself, not just the DNS result passed to
+    // lookup. This detects a transport that ignores the pinned lookup and
+    // connects elsewhere. Custom transportImpl is test-only and deliberately
+    // excluded because local integration adapters replace the destination.
+    if (!transportImpl) {
+      req.on("socket", (socket) => {
+        const verifyDestination = () => {
+          try {
+            const actual = socket.remoteAddress;
+            if (!actual || !isIP(actual) ||
+                ipaddr.process(actual).toNormalizedString() !==
+                  ipaddr.process(pinned.address).toNormalizedString()) {
+              req.destroy(new EgressError("socket_destination_mismatch"));
+            }
+          } catch {
+            req.destroy(new EgressError("socket_destination_mismatch"));
+          }
+        };
+        if (socket.connecting) socket.once("connect", verifyDestination);
+        else verifyDestination();
+      });
+    }
     // Enforce an absolute per-hop deadline as well as socket inactivity timeout,
     // so a peer cannot keep the request alive indefinitely by drip-feeding bytes.
     deadlineTimer = setTimeout(() => req.destroy(new EgressError("upstream_timeout")), timeoutMs);
