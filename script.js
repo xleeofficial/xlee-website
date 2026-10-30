@@ -118,8 +118,7 @@ if (!contactForm || !CONTACT_API_URL || !CONTACT_TURNSTILE_SITE_KEY || !window.t
         message: contactForm.elements.message.value, turnstileToken: token
       }) });
       if (!response.ok) throw new Error("send_failed");
-      status.textContent = currentLang === "ar" ? "تم إرسال الرسالة." : "Message sent.";
-      contactForm.reset();
+status.textContent = currentLang === "ar" ? "✓ تم إرسال رسالتك بنجاح! شكرًا لتواصلك مع XLEE." : "✓ Your message was sent successfully! Thank you for contacting XLEE.";      contactForm.reset();
     } catch { status.textContent = currentLang === "ar" ? "تعذر الإرسال. استخدم البريد أدناه." : "Could not send. Please use the email below."; }
     finally { token = ""; window.turnstile.reset("#contactTurnstile"); }
   });
