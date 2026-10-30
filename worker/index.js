@@ -3,7 +3,8 @@ const PRODUCTION_ORIGINS = new Set(["https://xlee.uk", "https://www.xlee.uk"]);
 // Staging must be explicitly enabled and bound to one exact HTTPS origin.
 // An incomplete or malformed configuration fails closed.
 function allowedOrigins(env) {
-  if (env?.XLEE_ENV !== "staging") return PRODUCTION_ORIGINS;
+  if (env?.XLEE_ENV === undefined || env?.XLEE_ENV === "production") return PRODUCTION_ORIGINS;
+  if (env?.XLEE_ENV !== "staging") return new Set(); // Unknown deployment mode must not inherit production access.
   const raw = env.STAGING_ORIGIN;
   if (typeof raw !== "string") return new Set();
   try {
@@ -268,7 +269,9 @@ export default {
   async fetch(request, env) {
     const origins = allowedOrigins(env);
     const origin = request.headers.get("Origin") || "";
-    if (env?.XLEE_ENV === "staging" && origins.size === 0) return new Response(null, { status: 503 });
+    // Reject unknown deployment modes and incomplete staging settings before
+    // health, preflight, Turnstile, or any upstream request is handled.
+    if (origins.size === 0) return new Response(null, { status: 503 });
     if (request.method === "OPTIONS") {
       if (!origins.has(origin)) return new Response(null, { status: 403, headers: { "vary": "Origin" } });
       return new Response(null, { status: 204, headers: {
