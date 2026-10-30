@@ -183,8 +183,8 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl, transpor
           try {
             const actual = socket.remoteAddress;
             if (!actual || !isIP(actual) ||
-                ipaddr.process(actual).toNormalizedString() !==
-                  ipaddr.process(pinned.address).toNormalizedString()) {
+                ipaddr.process(actual).toString() !==
+                  ipaddr.process(pinned.address).toString()) {
               req.destroy(new EgressError("socket_destination_mismatch"));
             }
           } catch {
