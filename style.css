@@ -42,3 +42,22 @@ body[dir="ltr"] .hero-proof .avatar-stack{direction:ltr}
 
 /* Staging contact form */
 .contact-form-wrap{width:min(100%,440px);position:relative;z-index:2}.contact-form{display:grid;gap:9px}.contact-form label{font-size:13px;color:#e9e9f2}.contact-form input,.contact-form textarea{width:100%;box-sizing:border-box;border:1px solid #575b78;border-radius:10px;background:#111528;color:#fff;padding:12px;font:inherit}.contact-form input:focus-visible,.contact-form textarea:focus-visible{outline:2px solid #a6b6ff;outline-offset:2px}.contact-form button{border:0;border-radius:10px;padding:13px 18px;background:#8f9cff;color:#090b16;font:inherit;font-weight:700;cursor:pointer}.contact-form button:disabled{opacity:.5;cursor:not-allowed}.contact-form p{font-size:12px;color:#c7c9d7}.contact-fallback{display:inline-block;margin-top:14px;color:#dce3ff;overflow-wrap:anywhere}
+
+/* XLEE contact form status */
+#contactStatus {
+  display: block;
+  margin-top: 14px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: rgba(34, 197, 94, 0.10);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #86efac;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.7;
+  text-align: center;
+}
+
+#contactStatus:empty {
+  display: none;
+}
