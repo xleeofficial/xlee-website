@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <script src="script.js" defer></script>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>\n  <script src="script.js" defer></script>
 </head>
 <body>
   <div class="noise" aria-hidden="true"></div>
@@ -98,7 +98,14 @@
 
     <section class="contact section-wrap" id="contact">
       <div class="section-label reveal"><span>03</span><span data-i18n="contactLabel">لنبدأ شيئًا جديدًا</span></div>
-      <div class="contact-panel reveal"><div class="contact-copy"><h2 data-i18n-html="contactTitle">لديك فكرة<br>تستحق الانطلاق؟</h2><p data-i18n="contactDesc">أرسل لنا رسالة، ودعنا نرى إلى أين يمكن أن تصل.</p></div><a class="contact-email" href="mailto:hello@xlee.com"><span>hello@xlee.com</span><span class="email-arrow">↗</span></a><div class="contact-glow"></div></div>
+      <div class="contact-panel reveal"><div class="contact-copy"><h2 data-i18n-html="contactTitle">لديك فكرة<br>تستحق الانطلاق؟</h2><p data-i18n="contactDesc">أرسل لنا رسالة، ودعنا نرى إلى أين يمكن أن تصل.</p></div><div class="contact-form-wrap"><form id="contactForm" class="contact-form" novalidate>
+<label for="contactName" data-i18n="formName">الاسم</label><input id="contactName" name="name" autocomplete="name" maxlength="100" minlength="2" required>
+<label for="contactEmail" data-i18n="formEmail">البريد الإلكتروني</label><input id="contactEmail" name="email" type="email" autocomplete="email" maxlength="254" required>
+<label for="contactMessage" data-i18n="formMessage">رسالتك</label><textarea id="contactMessage" name="message" minlength="10" maxlength="3000" rows="5" required></textarea>
+<div id="contactTurnstile" aria-label="Spam verification"></div>
+<button type="submit" id="contactSubmit" disabled data-i18n="formSend">إرسال الرسالة</button>
+<p id="contactStatus" role="status" aria-live="polite" data-i18n="formUnavailable">النموذج قيد التجهيز؛ يمكنك مراسلتنا عبر البريد أدناه.</p>
+</form><a class="contact-fallback" href="mailto:xlee@xlee.uk">xlee@xlee.uk ↗</a></div><div class="contact-glow"></div></div>
     </section>
   </main>
 

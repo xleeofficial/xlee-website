@@ -9,7 +9,7 @@ const translations = {
     principle1Title:"فضول دائم",principle1Desc:"نطرح الأسئلة ونبحث عن زوايا لم تُكتشف بعد.",principle2Title:"خيال جريء",principle2Desc:"نمنح الأفكار مساحة لتكبر وتتجاوز المتوقع.",principle3Title:"أثر حقيقي",principle3Desc:"نصنع تجارب جميلة، واضحة، وقريبة من الناس.",
     workLabel:"ما الذي نصنعه؟",workTitle:"من شرارة صغيرة<br>إلى <span class=\"gradient-text\">عالم كامل.</span>",workDesc:"كل رحلة مختلفة، لكن البداية دائمًا فكرة تستحق أن ترى النور.",
     work1Title:"تجارب رقمية",work1Desc:"مواقع وواجهات تجمع بين الفكرة والتفاصيل.",work2Title:"أفكار وهوية",work2Desc:"شخصية واضحة تترك انطباعًا.",work3Title:"حركة وتفاعل",work3Desc:"تفاصيل صغيرة تجعل التجربة حيّة.",
-    manifestoSmall:"تذكير صغير",manifestoTitle:"المستقبل لا يُنتظر.<br><span class=\"gradient-text\">بل نصنعه.</span>",contactLabel:"لنبدأ شيئًا جديدًا",contactTitle:"لديك فكرة<br>تستحق الانطلاق؟",contactDesc:"أرسل لنا رسالة، ودعنا نرى إلى أين يمكن أن تصل.",footerNote:"صُنع بفضول وقليل من السحر.",backTop:"العودة للأعلى ↑",menuLabel:"فتح القائمة"
+    manifestoSmall:"تذكير صغير",manifestoTitle:"المستقبل لا يُنتظر.<br><span class=\"gradient-text\">بل نصنعه.</span>",contactLabel:"لنبدأ شيئًا جديدًا",contactTitle:"لديك فكرة<br>تستحق الانطلاق؟",contactDesc:"أرسل لنا رسالة، ودعنا نرى إلى أين يمكن أن تصل.",footerNote:"صُنع بفضول وقليل من السحر.",backTop:"العودة للأعلى ↑",menuLabel:"فتح القائمة",formName:"الاسم",formEmail:"البريد الإلكتروني",formMessage:"رسالتك",formSend:"إرسال الرسالة",formUnavailable:"النموذج قيد التجهيز؛ يمكنك مراسلتنا عبر البريد أدناه."
   },
   en: {
     pageTitle:"XLEE — Make Something Different",description:"XLEE — a digital space for creative ideas and future-facing experiences.",
@@ -21,7 +21,7 @@ const translations = {
     principle1Title:"Always curious",principle1Desc:"We ask questions and look for undiscovered angles.",principle2Title:"Bold imagination",principle2Desc:"We give ideas room to grow beyond expectations.",principle3Title:"Real impact",principle3Desc:"We create beautiful, clear experiences made for people.",
     workLabel:"What do we make?",workTitle:"From a tiny spark<br>to a <span class=\"gradient-text\">whole world.</span>",workDesc:"Every journey is different, but it always begins with an idea worth bringing to life.",
     work1Title:"Digital experiences",work1Desc:"Websites and interfaces where ideas meet detail.",work2Title:"Ideas & identity",work2Desc:"A distinct personality that leaves an impression.",work3Title:"Motion & interaction",work3Desc:"Small details that make an experience feel alive.",
-    manifestoSmall:"A little reminder",manifestoTitle:"The future isn't waited for.<br><span class=\"gradient-text\">It's made.</span>",contactLabel:"Let's start something new",contactTitle:"Have an idea<br>ready to take off?",contactDesc:"Send a message and let's see where it could go.",footerNote:"Made with curiosity and a little magic.",backTop:"Back to top ↑",menuLabel:"Open menu"
+    manifestoSmall:"A little reminder",manifestoTitle:"The future isn't waited for.<br><span class=\"gradient-text\">It's made.</span>",contactLabel:"Let's start something new",contactTitle:"Have an idea<br>ready to take off?",contactDesc:"Send a message and let's see where it could go.",footerNote:"Made with curiosity and a little magic.",backTop:"Back to top ↑",menuLabel:"Open menu",formName:"Name",formEmail:"Email",formMessage:"Message",formSend:"Send message",formUnavailable:"The form is being prepared; please email us below."
   }
 };
 
@@ -92,3 +92,36 @@ try {
 } catch (_) {
   // The site works without local storage; Arabic is the default.
 }
+
+// Contact form stays disabled until staging API and Turnstile are configured.
+// Configure these PUBLIC values only after backend review; never put secrets here.
+const CONTACT_API_URL = "https://xlee-contact-staging.temoswager.workers.dev/api/contact";
+const CONTACT_TURNSTILE_SITE_KEY = "0x4AAAAAAFrs1vW4ept7k2EN";
+const contactForm = document.getElementById("contactForm");
+function initializeContactForm() {
+if (!contactForm || !CONTACT_API_URL || !CONTACT_TURNSTILE_SITE_KEY || !window.turnstile) return;
+  let token = "";
+  window.turnstile.render("#contactTurnstile", {
+    sitekey: CONTACT_TURNSTILE_SITE_KEY, action: "contact",
+    callback: (value) => { token = value; document.getElementById("contactSubmit").disabled = false; },
+    "expired-callback": () => { token = ""; document.getElementById("contactSubmit").disabled = true; }
+  });
+  contactForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!contactForm.reportValidity() || !token) return;
+    const submit = document.getElementById("contactSubmit");
+    const status = document.getElementById("contactStatus");
+    submit.disabled = true;
+    try {
+      const response = await fetch(CONTACT_API_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+        name: contactForm.elements.name.value, email: contactForm.elements.email.value,
+        message: contactForm.elements.message.value, turnstileToken: token
+      }) });
+      if (!response.ok) throw new Error("send_failed");
+status.textContent = currentLang === "ar" ? "✓ تم إرسال رسالتك بنجاح! شكرًا لتواصلك مع XLEE." : "✓ Your message was sent successfully! Thank you for contacting XLEE.";      contactForm.reset();
+    } catch { status.textContent = currentLang === "ar" ? "تعذر الإرسال. استخدم البريد أدناه." : "Could not send. Please use the email below."; }
+    finally { token = ""; window.turnstile.reset("#contactTurnstile"); }
+  });
+}
+if (document.readyState === "complete") initializeContactForm();
+else window.addEventListener("load", initializeContactForm, { once: true });
