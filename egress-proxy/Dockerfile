@@ -3,7 +3,7 @@ ENV NODE_ENV=production PORT=8080
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
-COPY server.js ./
+COPY server.js network-policy-probe.mjs ./
 USER node
 EXPOSE 8080
 CMD ["node", "server.js"]
