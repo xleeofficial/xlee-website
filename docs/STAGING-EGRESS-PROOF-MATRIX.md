@@ -30,6 +30,33 @@ For each probe record timestamp, image digest, effective policy/rule ID, target,
 | P11 | Staging Worker CORS, Turnstile hostname/action and server-side verification | Only exact staging origin and valid token accepted |
 | P12 | Kill/disable policy enforcement component | Egress fails closed, never falls back to direct internet |
 
+
+## Executable network-policy preflight (added 2026-10-31; NOT RUN in staging)
+
+The repository now includes `egress-proxy/network-policy-probe.mjs` and its regression tests. This is a **raw TCP probe that bypasses the application DNS/HTTP validation**, intended to test the independent network boundary from *inside* an approved, isolated container. It does **not** create or configure firewall rules, and a timeout or connection refusal is **not** proof of a firewall deny.
+
+Before running it, provision **your own controlled** public positive-control listener and RFC1918/ULA negative-control listener on known open ports. Never probe live metadata addresses, third-party private hosts, production, or a provider's internal control plane. A test manifest must contain a `scope` and 2–16 literal-IP probes, including at least one allow and one deny:
+
+```json
+{
+  "scope": "isolated-staging-controlled-targets",
+  "probes": [
+    { "id": "owned_public_listener", "address": "REPLACE_WITH_OWN_PUBLIC_IP", "port": 443, "expect": "allow" },
+    { "id": "owned_private_listener", "address": "REPLACE_WITH_OWN_RFC1918_IP", "port": 8443, "expect": "deny" }
+  ]
+}
+```
+
+Replace both placeholders with IPs of controlled, reachable test listeners. In the **approved staging container only**, run:
+
+```sh
+XLEE_EGRESS_PROBE_ACK=isolated-staging-controlled-targets node egress-proxy/network-policy-probe.mjs /path/to/controlled-probes.json
+```
+
+`POLICY_BYPASS` means a forbidden direct TCP connection succeeded and is an immediate **NO-GO**. `ALLOW_FAILED` means the positive control failed and is also **NO-GO**. `DENY_UNVERIFIED` means a TCP connection failed but the firewall cause is **unproven**; the tool deliberately exits nonzero (2) even if every negative probe failed. Obtain effective policy/rule IDs, actual destination/route evidence, firewall drop logs or equivalent packet-level evidence, and proof the negative-control sink was listening. Verify IPv6 separately, including route absence if applicable. A manual security review must reconcile these observations before any P02/P03/P07/P12 result can be marked PASS.
+
+These probes do not cover DNS rebinding, redirects, TLS certificate validation or Cloudflare Worker ingress. Complete the other proof-matrix rows independently. Running this tool in CI with mocked sockets is **not** a cloud network test.
+
 ## Release decision
 For every test mark PASS/FAIL/NOT RUN and attach evidence. Any FAIL or NOT RUN on independent destination-IP enforcement, TLS identity, fail-closed behavior, or ingress authentication means **NO-GO**. Obtain independent SSRF/security review before enabling a public scan. Document rollback and cost monitoring.
 
