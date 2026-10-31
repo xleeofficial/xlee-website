@@ -5,6 +5,7 @@ import net from "node:net";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import ipaddr from "ipaddr.js";
+import { isGloballyRoutable } from "./server.js";
 
 const PRIVATE_IPV4 = [
   [ipaddr.parse("10.0.0.0"), 8],
@@ -15,7 +16,7 @@ const ULA_IPV6 = ipaddr.parse("fc00::");
 const ACK = "isolated-staging-controlled-targets";
 
 function isControlledPrivate(address) {
-  const parsed = ipaddr.parse(address);
+  const parsed = ipaddr.process(address);
   return parsed.kind() === "ipv4"
     ? PRIVATE_IPV4.some(([prefix, bits]) => parsed.match(prefix, bits))
     : parsed.match(ULA_IPV6, 7);
@@ -43,8 +44,8 @@ export function validateProbeManifest(input) {
     if (probe.expect === "deny" && !isControlledPrivate(probe.address)) {
       throw new Error("Deny probes must target a controlled RFC1918/ULA sink");
     }
-    if (probe.expect === "allow" && isControlledPrivate(probe.address)) {
-      throw new Error("Allow probes must not target a private sink");
+    if (probe.expect === "allow" && !isGloballyRoutable(probe.address)) {
+      throw new Error("Allow probes must target a globally routable address");
     }
     hasAllow ||= probe.expect === "allow";
     hasDeny ||= probe.expect === "deny";
