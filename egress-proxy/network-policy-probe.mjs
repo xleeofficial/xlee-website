@@ -13,10 +13,13 @@ const PRIVATE_IPV4 = [
   [ipaddr.parse("192.168.0.0"), 16],
 ];
 const ULA_IPV6 = ipaddr.parse("fc00::");
+// AWS IMDS IPv6 address lives inside ULA; never probe this provider range.
+const AWS_METADATA_IPV6_PREFIX = ipaddr.parse("fd00:ec2::");
 const ACK = "isolated-staging-controlled-targets";
 
 function isControlledPrivate(address) {
   const parsed = ipaddr.process(address);
+  if (parsed.kind() === "ipv6" && parsed.match(AWS_METADATA_IPV6_PREFIX, 32)) return false;
   return parsed.kind() === "ipv4"
     ? PRIVATE_IPV4.some(([prefix, bits]) => parsed.match(prefix, bits))
     : parsed.match(ULA_IPV6, 7);
