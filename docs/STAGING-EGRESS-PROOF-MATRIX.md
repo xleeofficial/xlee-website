@@ -47,10 +47,10 @@ Before running it, provision **your own controlled** public positive-control lis
 }
 ```
 
-Replace both placeholders with IPs of controlled, reachable test listeners. In the **approved staging container only**, run:
+Replace both placeholders with IPs of controlled, reachable test listeners. The probe is included in the feature-branch container image but is never started by the normal server command. Execute it **only in an approved isolated staging workload with the same effective egress policy and routing as the service**, using an explicitly mounted manifest. A separate test job is not evidence of service isolation unless the policy scope, network tags, routes and identities match and are verified. Run:
 
 ```sh
-XLEE_EGRESS_PROBE_ACK=isolated-staging-controlled-targets node egress-proxy/network-policy-probe.mjs /path/to/controlled-probes.json
+XLEE_EGRESS_PROBE_ACK=isolated-staging-controlled-targets node /app/network-policy-probe.mjs /path/to/controlled-probes.json
 ```
 
 `POLICY_BYPASS` means a forbidden direct TCP connection succeeded and is an immediate **NO-GO**. `ALLOW_FAILED` means the positive control failed and is also **NO-GO**. `DENY_UNVERIFIED` means a TCP connection failed but the firewall cause is **unproven**; the tool deliberately exits nonzero (2) even if every negative probe failed. Obtain effective policy/rule IDs, actual destination/route evidence, firewall drop logs or equivalent packet-level evidence, and proof the negative-control sink was listening. Verify IPv6 separately, including route absence if applicable. A manual security review must reconcile these observations before any P02/P03/P07/P12 result can be marked PASS.
