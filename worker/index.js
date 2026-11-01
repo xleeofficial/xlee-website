@@ -37,7 +37,7 @@ function isValidProxyHostname(host) {
   if (typeof host !== "string" || host.length > 253 || host.endsWith(".")) return false;
   const lower = host.toLowerCase();
   if (lower === "localhost" || [".localhost", ".local", ".internal", ".test", ".invalid", ".onion"].some(suffix => lower.endsWith(suffix))) return false;
-  return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/.test(lower);
+  return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(lower);
 }
 
 function validatePublicUrl(raw) {
