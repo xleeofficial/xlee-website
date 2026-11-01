@@ -30,6 +30,16 @@ function json(data, status = 200, origin = "", origins = PRODUCTION_ORIGINS) {
   return new Response(JSON.stringify(data), { status, headers });
 }
 
+// Proxy credentials must never be sent to literal IPs or local-use names, even
+// if SAFE_FETCH_PROXY_URL and SAFE_FETCH_PROXY_HOST are both misconfigured.
+// This is configuration validation, not a replacement for DNS/TLS/firewall checks.
+function isValidProxyHostname(host) {
+  if (typeof host !== "string" || host.length > 253 || host.endsWith(".")) return false;
+  const lower = host.toLowerCase();
+  if (lower === "localhost" || [".localhost", ".local", ".internal", ".test", ".invalid", ".onion"].some(suffix => lower.endsWith(suffix))) return false;
+  return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/.test(lower);
+}
+
 function validatePublicUrl(raw) {
   if (typeof raw !== "string" || raw.length > MAX_URL_LENGTH) throw new Error("Enter a valid public URL.");
   let url;
@@ -58,7 +68,9 @@ async function fetchPublicHtml(initialUrl, env) {
   try { proxyUrl = new URL(env.SAFE_FETCH_PROXY_URL); } catch { throw new Error("Secure page-fetch service configuration is invalid."); }
   if (proxyUrl.protocol !== "https:" || proxyUrl.username || proxyUrl.password ||
       proxyUrl.pathname !== "/fetch" || proxyUrl.search || proxyUrl.hash ||
-      proxyUrl.port || proxyUrl.hostname.toLowerCase() !== String(env.SAFE_FETCH_PROXY_HOST).toLowerCase()) {
+      proxyUrl.port || !isValidProxyHostname(proxyUrl.hostname) ||
+       !isValidProxyHostname(env.SAFE_FETCH_PROXY_HOST) ||
+       proxyUrl.hostname.toLowerCase() !== env.SAFE_FETCH_PROXY_HOST.toLowerCase()) {
     throw new Error("Secure page-fetch service must use the exact configured HTTPS host, the /fetch endpoint, and contain no credentials, port, or URL parameters.");
   }
   validatePublicUrl(initialUrl.href);
