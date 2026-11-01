@@ -82,8 +82,14 @@ export async function runPolicyProbes(probes, dial = dialLiteral) {
   for (const probe of probes) {
     try {
       const remoteAddress = await dial(probe.address, probe.port);
+      // A transparent redirect or test-adapter mistake must not count as a
+      // successful positive control. Normalize IPv4-mapped IPv6 peers first.
+      const peerMatches = typeof remoteAddress === "string" && net.isIP(remoteAddress) !== 0 &&
+        ipaddr.process(remoteAddress).toString() === ipaddr.process(probe.address).toString();
       results.push({
-        ...probe, outcome: probe.expect === "deny" ? "POLICY_BYPASS" : "ALLOW_CONNECTED",
+        ...probe,
+        outcome: probe.expect === "deny" ? "POLICY_BYPASS" :
+          (peerMatches ? "ALLOW_CONNECTED" : "ALLOW_WRONG_PEER"),
         remoteAddress: remoteAddress || null,
       });
     } catch (error) {
@@ -108,7 +114,7 @@ async function main() {
     note: "DENY_UNVERIFIED is not a pass: attach effective firewall rules, packet/flow evidence and controlled sink availability before any release decision.",
     results,
   }, null, 2) + "\n");
-  if (results.some((r) => r.outcome === "POLICY_BYPASS" || r.outcome === "ALLOW_FAILED")) process.exitCode = 1;
+  if (results.some((r) => ["POLICY_BYPASS", "ALLOW_FAILED", "ALLOW_WRONG_PEER"].includes(r.outcome))) process.exitCode = 1;
   else process.exitCode = 2; // Never claim independent policy PASS from TCP failures alone.
 }
 
