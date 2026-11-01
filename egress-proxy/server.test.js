@@ -255,6 +255,29 @@ test("blocks a redirect hostname when its DNS resolves to a private address", as
   assert.equal(requests, 1, "must not connect to the redirect destination");
 });
 
+test("redirect DNS must reject mixed public A and private AAAA before the next connection", async () => {
+  const visited = [];
+  const dnsHosts = [];
+  await assert.rejects(fetchPublicHtml("https://start-example.com/", {
+    resolver: async (hostname) => {
+      dnsHosts.push(hostname);
+      return hostname === "start-example.com"
+        ? [{ address: "8.8.8.8", family: 4 }]
+        : [
+          { address: "8.8.4.4", family: 4 },
+          { address: "fd00::254", family: 6 },
+        ];
+    },
+    requestImpl: async (url) => {
+      visited.push(url.href);
+      return { status: 302, location: "https://redirect-example.com/secret", html: "" };
+    },
+  }), /non_public_dns_answer/);
+  assert.deepEqual(dnsHosts, ["start-example.com", "redirect-example.com"]);
+  assert.deepEqual(visited, ["https://start-example.com/"],
+    "a redirect with even one private AAAA record must never be contacted");
+});
+
 test("rejects redirect schemes and non-standard ports", async () => {
   for (const location of [
     "file:///etc/passwd",
