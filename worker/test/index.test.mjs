@@ -111,6 +111,33 @@ test("rejects unsafe trusted-proxy URL configuration before sending the bearer t
   }
 });
 
+test("rejects local, literal-IP and malformed trusted-proxy hosts without leaking bearer tokens", async () => {
+  const originalFetch = globalThis.fetch;
+  let proxyCalls = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("siteverify")) return turnstileResponse();
+    proxyCalls++;
+    throw new Error("No request to an unsafe proxy host is allowed");
+  };
+  try {
+    for (const host of [
+      "127.0.0.1", "8.8.8.8", "[::1]", "localhost",
+      "metadata.google.internal", "egress.local", "egress.example.",
+      "-bad.example", "bad-.example"
+    ]) {
+      const response = await worker.fetch(
+        request("https://worker.example/api/scan", {
+          url: "https://shop.example.com/product", turnstileToken: TOKEN
+        }),
+        env({ SAFE_FETCH_PROXY_URL: `https://${host}/fetch`, SAFE_FETCH_PROXY_HOST: host })
+      );
+      assert.equal(response.status, 422, host);
+      assert.match((await response.json()).error, /scan could not be completed/i);
+    }
+    assert.equal(proxyCalls, 0, "misconfigured proxy hosts must never receive the bearer token");
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("rejects IP-literal target before calling the egress proxy", async () => {
   const originalFetch = globalThis.fetch;
   let proxyCalled = false;
