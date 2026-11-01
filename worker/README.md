@@ -61,4 +61,4 @@ The presence of secrets alone does not make the endpoint safe. The egress servic
 
 
 ### Security configuration requirement
-The Worker requires `SAFE_FETCH_PROXY_HOST` in addition to `SAFE_FETCH_PROXY_URL` and `SAFE_FETCH_PROXY_TOKEN`. The URL must be HTTPS, use exactly the configured hostname, use path `/fetch`, and contain no port, credentials, query, or fragment. This exact-host binding prevents a misconfigured or tampered proxy URL from receiving the bearer token.
+The Worker requires `SAFE_FETCH_PROXY_HOST` in addition to `SAFE_FETCH_PROXY_URL` and `SAFE_FETCH_PROXY_TOKEN`. The URL must be HTTPS, use exactly the configured hostname, use path `/fetch`, and contain no port, credentials, query, or fragment. The hostname must be a well-formed multi-label DNS name, not an IP literal, localhost, or a local-use/internal suffix. This guard prevents accidental bearer-token disclosure to obviously unsafe proxy hosts; it does **not** authenticate the provider, verify DNS policy, or prove an independent firewall exists. This exact-host binding prevents a misconfigured or tampered proxy URL from receiving the bearer token.
