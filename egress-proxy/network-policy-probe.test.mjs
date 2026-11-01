@@ -60,6 +60,21 @@ test("policy probe never calls a TCP failure proof of firewall enforcement", asy
   assert.equal(results[0].remoteAddress, "8.8.8.8");
 });
 
+test("positive controls reject wrong peers but accept IPv4-mapped equivalents", async () => {
+  const probes = validateProbeManifest(controlled);
+  const wrong = await runPolicyProbes(probes, async (address) =>
+    address === "8.8.8.8" ? "127.0.0.1" : address);
+  assert.equal(wrong[0].outcome, "ALLOW_WRONG_PEER");
+  assert.equal(wrong[0].remoteAddress, "127.0.0.1");
+  assert.equal(wrong[1].outcome, "POLICY_BYPASS");
+  const mapped = await runPolicyProbes(probes, async (address) =>
+    address === "8.8.8.8" ? "::ffff:8.8.8.8" : address);
+  assert.equal(mapped[0].outcome, "ALLOW_CONNECTED");
+  const absent = await runPolicyProbes(probes, async (address) =>
+    address === "8.8.8.8" ? undefined : address);
+  assert.equal(absent[0].outcome, "ALLOW_WRONG_PEER");
+});
+
 test("policy probe flags any connected deny sink as a policy bypass", async () => {
   const probes = validateProbeManifest(controlled);
   const results = await runPolicyProbes(probes, async (address) => address);
