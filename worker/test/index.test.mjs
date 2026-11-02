@@ -593,3 +593,74 @@ test("explicit production deployment mode preserves exact production CORS", asyn
     assert.equal(response.headers.get("access-control-allow-origin"), origin);
   }
 });
+
+
+test("staging API validation errors retain staging CORS without granting production origins", async () => {
+  const staging = "https://lens-staging.example.workers.dev";
+  const configuration = env({ XLEE_ENV: "staging", STAGING_ORIGIN: staging });
+  const originalFetch = globalThis.fetch;
+  let outbound = 0;
+  globalThis.fetch = async () => { outbound++; throw new Error("Invalid JSON must not reach the network"); };
+  try {
+    const malformed = await worker.fetch(new Request("https://worker.example/api/scan", {
+      method: "POST",
+      headers: { Origin: staging, "Content-Type": "application/json" },
+      body: "{not-json",
+    }), configuration);
+    assert.equal(malformed.status, 400);
+    assert.equal(malformed.headers.get("access-control-allow-origin"), staging);
+    assert.match((await malformed.json()).error, /Invalid JSON/i);
+
+    const tooLarge = await worker.fetch(new Request("https://worker.example/api/scan", {
+      method: "POST",
+      headers: { Origin: staging, "Content-Type": "application/json" },
+      body: JSON.stringify({ padding: "x".repeat(5000) }),
+    }), configuration);
+    assert.equal(tooLarge.status, 413);
+    assert.equal(tooLarge.headers.get("access-control-allow-origin"), staging);
+
+    const denied = await worker.fetch(new Request("https://worker.example/api/scan", {
+      method: "POST",
+      headers: { Origin: ORIGIN, "Content-Type": "application/json" },
+      body: "{not-json",
+    }), configuration);
+    assert.equal(denied.status, 403);
+    assert.equal(denied.headers.get("access-control-allow-origin"), null);
+    assert.equal(outbound, 0);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("staging proxy failures return generic errors with staging-only CORS", async () => {
+  const staging = "https://lens-staging.example.workers.dev";
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    if (String(url).includes("siteverify")) {
+      return new Response(JSON.stringify({
+        success: true, hostname: "lens-staging.example.workers.dev", action: "scan"
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (String(url) === "https://egress.example/fetch") {
+      return new Response("private proxy failure: internal.example", { status: 503 });
+    }
+    throw new Error("Unexpected outbound request");
+  };
+  try {
+    const response = await worker.fetch(
+      request("https://worker.example/api/scan", {
+        url: "https://shop.example.com/product", turnstileToken: TOKEN
+      }, { Origin: staging }),
+      env({ XLEE_ENV: "staging", STAGING_ORIGIN: staging })
+    );
+    assert.equal(response.status, 422);
+    assert.equal(response.headers.get("access-control-allow-origin"), staging);
+    const body = await response.json();
+    assert.match(body.error, /scan could not be completed/i);
+    assert.doesNotMatch(JSON.stringify(body), /internal\\.example|private proxy|503/i);
+    assert.deepEqual(calls, [
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      "https://egress.example/fetch",
+    ]);
+  } finally { globalThis.fetch = originalFetch; }
+});
