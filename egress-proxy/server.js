@@ -62,7 +62,7 @@ export function validateUpstreamHeaders(status, headers = {}, maxBytes = DEFAULT
   // misleadingly small length still goes through the streaming byte cap.
   const declared = headers["content-length"];
   if (declared !== undefined) {
-    if (typeof declared !== "string" || !/^\\d+$/.test(declared) ||
+    if (typeof declared !== "string" || !/^\d+$/.test(declared) ||
         !Number.isSafeInteger(Number(declared))) {
       throw new EgressError("invalid_content_length");
     }
