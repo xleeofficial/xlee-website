@@ -751,3 +751,53 @@ test("real request path accepts a socket matching the pinned DNS address", async
     http.request = originalRequest;
   }
 });
+
+
+test("Content-Length is validated against the byte budget before any body is read", () => {
+  const headers = { "content-type": "text/html", "content-encoding": "identity" };
+  assert.equal(validateUpstreamHeaders(200, { ...headers, "content-length": "32" }, 32), true);
+  assert.equal(validateUpstreamHeaders(200, { ...headers, "content-length": "00032" }, 32), true);
+  for (const declared of ["33", "1500001"]) {
+    assert.throws(() => validateUpstreamHeaders(200, { ...headers, "content-length": declared }, 32),
+      (error) => error instanceof EgressError && error.code === "response_too_large");
+  }
+  for (const declared of ["-1", "+1", "1.5", "1e6", "999999999999999999999", ["2", "3"]]) {
+    assert.throws(() => validateUpstreamHeaders(200, { ...headers, "content-length": declared }, 32),
+      (error) => error instanceof EgressError && error.code === "invalid_content_length");
+  }
+});
+
+test("real transport tears down an upstream that advertises an oversized HTML body", async () => {
+  let markClosed;
+  const closed = new Promise((resolve) => { markClosed = resolve; });
+  const upstream = http.createServer((_req, res) => {
+    res.on("close", markClosed);
+    res.writeHead(200, { "content-type": "text/html", "content-length": "100000" });
+    res.flushHeaders();
+    // Never send a body. A client waiting to stream it will hang.
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  const transportImpl = {
+    request(options, callback) {
+      return http.request({
+        ...options, hostname: "127.0.0.1", port: upstream.address().port,
+        lookup: undefined, agent: false,
+      }, callback);
+    },
+  };
+  try {
+    await assert.rejects(fetchPublicHtml("http://public-example.com/", {
+      resolver: async () => [{ address: "93.184.216.34", family: 4 }],
+      transportImpl,
+      maxBytes: 32,
+      timeoutMs: 2000,
+    }), (error) => error instanceof EgressError && error.code === "response_too_large");
+    await Promise.race([
+      closed,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("oversized declared body was not closed promptly")), 700)),
+    ]);
+  } finally {
+    upstream.closeAllConnections();
+    await new Promise((resolve) => upstream.close(resolve));
+  }
+});
