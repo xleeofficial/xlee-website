@@ -303,7 +303,7 @@ export default {
     if (contentType.split(";")[0].trim().toLowerCase() !== "application/json") return json({ error: "Content-Type must be application/json" }, 415, origin, origins);
     let body;
     try { body = await readJsonLimited(request); }
-    catch (error) { return json({ error: error.message }, /too large/i.test(error.message) ? 413 : 400, origin); }
+    catch (error) { return json({ error: error.message }, /too large/i.test(error.message) ? 413 : 400, origin, origins); }
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return json({ error: "Expected a JSON object." }, 400, origin, origins);
     }
@@ -327,7 +327,7 @@ export default {
         error: timedOut
           ? "The scan timed out. Please try again."
           : "The scan could not be completed. Please try again later."
-      }, 422, origin);
+      }, 422, origin, origins);
     }
   }
 };
