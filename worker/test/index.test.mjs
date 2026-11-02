@@ -657,7 +657,7 @@ test("staging proxy failures return generic errors with staging-only CORS", asyn
     assert.equal(response.headers.get("access-control-allow-origin"), staging);
     const body = await response.json();
     assert.match(body.error, /scan could not be completed/i);
-    assert.doesNotMatch(JSON.stringify(body), /internal\\.example|private proxy|503/i);
+    assert.doesNotMatch(JSON.stringify(body), /internal\.example|private proxy|503/i);
     assert.deepEqual(calls, [
       "https://challenges.cloudflare.com/turnstile/v0/siteverify",
       "https://egress.example/fetch",
