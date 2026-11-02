@@ -50,7 +50,7 @@ export function isGloballyRoutable(address) {
   } catch { return false; }
 }
 
-export function validateUpstreamHeaders(status, headers = {}) {
+export function validateUpstreamHeaders(status, headers = {}, maxBytes = DEFAULT_MAX_HTML_BYTES) {
   if (!Number.isInteger(status) || status < 200 || status >= 300) {
     throw new EgressError("upstream_status");
   }
@@ -58,6 +58,16 @@ export function validateUpstreamHeaders(status, headers = {}) {
   const encoding = String(headers["content-encoding"] || "identity").trim().toLowerCase();
   if (!HTML_TYPES.has(type)) throw new EgressError("content_type_blocked");
   if (encoding !== "identity") throw new EgressError("content_encoding_blocked");
+  // Refuse oversized advertised bodies before reading a single byte. A
+  // misleadingly small length still goes through the streaming byte cap.
+  const declared = headers["content-length"];
+  if (declared !== undefined) {
+    if (typeof declared !== "string" || !/^\\d+$/.test(declared) ||
+        !Number.isSafeInteger(Number(declared))) {
+      throw new EgressError("invalid_content_length");
+    }
+    if (Number(declared) > maxBytes) throw new EgressError("response_too_large");
+  }
   return true;
 }
 
@@ -145,7 +155,7 @@ function requestPinned(url, pinned, { timeoutMs, maxBytes, requestImpl, transpor
         return;
       }
       try {
-        validateUpstreamHeaders(status, res.headers);
+        validateUpstreamHeaders(status, res.headers, maxBytes);
       } catch (error) {
         // Never drain an attacker-controlled body after rejecting its headers:
         // a peer can stream indefinitely, tying up sockets and bandwidth.
@@ -318,6 +328,15 @@ export function createServer({ token = process.env.SAFE_FETCH_PROXY_TOKEN, resol
     if (!rate.allowed) return send(res, 429, { error: "rate_limited" }, { "retry-after": String(rate.retryAfter) });
     const contentType = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
     if (contentType !== "application/json") return send(res, 415, { error: "unsupported_media_type" });
+    // Reject an oversized declared upload before allocating a fetch slot or
+    // reading its body. The streaming cap below remains authoritative for
+    // chunked transfers and clients that lie about their length.
+    const declaredBodyLength = req.headers["content-length"];
+    if (declaredBodyLength !== undefined && Number(declaredBodyLength) > MAX_BODY_BYTES) {
+      res.once("finish", () => req.destroy());
+      req.resume();
+      return send(res, 413, { error: "request_too_large" });
+    }
     // Bound concurrent authenticated requests, including slow uploads and DNS
     // lookups. This is per-process backpressure, not a distributed quota.
     if (activeFetches >= maxConcurrentFetches) return send(res, 503, { error: "busy" }, { "retry-after": "1" });
