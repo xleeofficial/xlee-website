@@ -121,3 +121,32 @@ test("handles Turnstile timeout safely", async (t) => {
     error: "unavailable"
   });
 });
+
+test("handles Brevo timeout safely", async (t) => {
+  let calls = 0;
+
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls++;
+
+    if (String(url).includes("siteverify")) {
+      return Response.json({
+        success: true,
+        hostname: "xlee.uk",
+        action: "contact"
+      });
+    }
+
+    assert.ok(String(url).includes("api.brevo.com"));
+    assert.ok(options.signal instanceof AbortSignal);
+
+    throw new DOMException("Request timed out", "TimeoutError");
+  });
+
+  const response = await worker.fetch(req(body), env);
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    error: "unavailable"
+  });
+  assert.equal(calls, 2);
+});
