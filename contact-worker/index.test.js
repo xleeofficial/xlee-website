@@ -106,3 +106,18 @@ test("fails safely when rate limiter is unavailable", async () => {
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: "unavailable" });
 });
+
+test("handles Turnstile timeout safely", async (t) => {
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.ok(String(url).includes("siteverify"));
+    assert.ok(options.signal instanceof AbortSignal);
+    throw new DOMException("Request timed out", "TimeoutError");
+  });
+
+  const response = await worker.fetch(req(body), env);
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    error: "unavailable"
+  });
+});
