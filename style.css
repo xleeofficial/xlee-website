@@ -61,3 +61,10 @@ body[dir="ltr"] .hero-proof .avatar-stack{direction:ltr}
 #contactStatus:empty {
   display: none;
 }
+
+/* XLEE contact form error message */
+#contactStatus[data-state="error"] {
+  background: rgba(239, 68, 68, 0.10);
+  border-color: rgba(239, 68, 68, 0.40);
+  color: #fca5a5;
+}
