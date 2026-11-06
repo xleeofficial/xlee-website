@@ -99,9 +99,13 @@ const CONTACT_API_URL = "https://xlee-contact-staging.temoswager.workers.dev/api
 const CONTACT_TURNSTILE_SITE_KEY = "0x4AAAAAAFrs1vW4ept7k2EN";
 const contactForm = document.getElementById("contactForm");
 function initializeContactForm() {
-if (!contactForm || !CONTACT_API_URL || !CONTACT_TURNSTILE_SITE_KEY || !window.turnstile) return;
-  let token = "";
+  if (window.location.hostname !== "xlee-contact-preview.pages.dev") return;
+  if (!contactForm || !CONTACT_API_URL || !CONTACT_TURNSTILE_SITE_KEY || !window.turnstile) return;
+  
+let token = "";
+
   window.turnstile.render("#contactTurnstile", {
+    
     sitekey: CONTACT_TURNSTILE_SITE_KEY, action: "contact",
     callback: (value) => { token = value; document.getElementById("contactSubmit").disabled = false; },
     "expired-callback": () => { token = ""; document.getElementById("contactSubmit").disabled = true; }
