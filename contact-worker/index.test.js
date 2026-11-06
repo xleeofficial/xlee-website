@@ -28,7 +28,8 @@ test("rejects invalid form input", async () => {
 });
 
 test("fails closed when secrets are absent", async () => {
-  const result = await worker.fetch(req(body), { CONTACT_ALLOWED_ORIGINS: "https://xlee.uk" });
+
+const result = await worker.fetch(req(body), { ...env, BREVO_API_KEY: undefined, TURNSTILE_SECRET_KEY: undefined });
   assert.equal(result.status, 503);
 });
 
