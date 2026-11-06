@@ -15,8 +15,7 @@ const env = {
 };
 const endpoint = "https://worker.example/api/contact";
 const body = { name: "Tester", email: "tester@example.com", message: "Hello from XLEE test", turnstileToken: "mock-token" };
-const req = (data, origin = "https://xlee.uk") => new Request(endpoint, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(data) });
-
+const req = (data, origin = "https://xlee.uk") => new Request(endpoint, { method: "POST", headers: { origin, "content-type": "application/json", "CF-Connecting-IP": "192.0.2.10" }, body: JSON.stringify(data) });
 test("rejects untrusted origins before external requests", async () => {
   const result = await worker.fetch(req(body, "https://evil.example"), env);
   assert.equal(result.status, 403);
