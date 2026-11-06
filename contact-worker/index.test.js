@@ -90,3 +90,19 @@ test("rejects requests when rate limit is exceeded", async () => {
   assert.equal(response.status, 429);
   assert.deepEqual(await response.json(), { error: "rate_limited" });
 });
+
+test("fails safely when rate limiter is unavailable", async () => {
+  const failingEnv = {
+    ...env,
+    CONTACT_RATE_LIMITER: {
+      limit: async () => {
+        throw new Error("Rate limiter unavailable");
+      }
+    }
+  };
+
+  const response = await worker.fetch(req(body), failingEnv);
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "unavailable" });
+});
