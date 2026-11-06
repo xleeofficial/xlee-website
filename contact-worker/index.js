@@ -20,9 +20,19 @@ if (!clientIP) {
   return respond({ error: "client_ip_unavailable" }, 400);
 }
 
-const { success } = await env.CONTACT_RATE_LIMITER.limit({
-  key: clientIP
-});
+
+let success;
+try {
+  if (!env.CONTACT_RATE_LIMITER?.limit) {
+    return respond({ error: "unavailable" }, 503);
+  }
+
+  ({ success } = await env.CONTACT_RATE_LIMITER.limit({
+    key: clientIP
+  }));
+} catch {
+  return respond({ error: "unavailable" }, 503);
+}
 
 if (!success) {
   return respond({ error: "rate_limited" }, 429);
