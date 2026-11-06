@@ -57,7 +57,8 @@ if (!success) {
       form.set("response", turnstileToken);
       const ip = request.headers.get("CF-Connecting-IP");
       if (ip) form.set("remoteip", ip);
-      const verification = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
+
+const verification = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form, signal: AbortSignal.timeout(10000) });
       if (!verification.ok) return respond({ error: "verification_unavailable" }, 503);
       const verdict = await verification.json();
       if (!verdict.success || verdict.hostname !== env.TURNSTILE_SITE_HOSTNAME || verdict.action !== "contact" || (verdict.challenge_ts && Date.now() - Date.parse(verdict.challenge_ts) > 300000)) return respond({ error: "verification_failed" }, 403);
@@ -70,8 +71,11 @@ if (!success) {
           replyTo: { email, name: name.trim() },
           subject: "New XLEE website contact",
           textContent: "Name: " + name.trim() + "\nEmail: " + email + "\n\n" + message.trim()
-        })
+       
+        }),
+        signal: AbortSignal.timeout(10000)
       });
+
       return sent.ok ? respond({ ok: true }) : respond({ error: "send_failed" }, 502);
     } catch { return respond({ error: "unavailable" }, 503); }
   }
