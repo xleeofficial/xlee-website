@@ -13,7 +13,7 @@ const env = {
     limit: async () => ({ success: true })
   }
 };
-
+const endpoint = "https://worker.example/api/contact";
 const body = { name: "Tester", email: "tester@example.com", message: "Hello from XLEE test", turnstileToken: "mock-token" };
 const req = (data, origin = "https://xlee.uk") => new Request(endpoint, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(data) });
 
