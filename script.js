@@ -117,11 +117,25 @@ if (!contactForm || !CONTACT_API_URL || !CONTACT_TURNSTILE_SITE_KEY || !window.t
         name: contactForm.elements.name.value, email: contactForm.elements.email.value,
         message: contactForm.elements.message.value, turnstileToken: token
       }) });
+    
       if (!response.ok) throw new Error("send_failed");
-status.textContent = currentLang === "ar" ? "✓ تم إرسال رسالتك بنجاح! شكرًا لتواصلك مع XLEE." : "✓ Your message was sent successfully! Thank you for contacting XLEE.";      contactForm.reset();
-    } catch { status.textContent = currentLang === "ar" ? "تعذر الإرسال. استخدم البريد أدناه." : "Could not send. Please use the email below."; }
-    finally { token = ""; window.turnstile.reset("#contactTurnstile"); }
+
+      status.textContent = currentLang === "ar"
+        ? "✓ تم إرسال رسالتك بنجاح! شكرًا لتواصلك مع XLEE."
+        : "✓ Your message was sent successfully! Thank you for contacting XLEE.";
+      status.dataset.state = "success";
+      contactForm.reset();
+    } catch {
+      status.textContent = currentLang === "ar"
+        ? "تعذر الإرسال. استخدم البريد أدناه."
+        : "Could not send. Please use the email below.";
+      status.dataset.state = "error";
+    } finally {
+      token = "";
+      window.turnstile.reset("#contactTurnstile");
+    }
   });
 }
+
 if (document.readyState === "complete") initializeContactForm();
 else window.addEventListener("load", initializeContactForm, { once: true });
