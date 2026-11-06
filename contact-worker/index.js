@@ -14,6 +14,20 @@ export default {
     if (request.method === "OPTIONS") return allowed.includes(origin) ? new Response(null, { status: 204, headers: { ...cors, "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "content-type" } }) : respond({ error: "forbidden" }, 403);
     if (request.method !== "POST" || new URL(request.url).pathname !== "/api/contact") return respond({ error: "not_found" }, 404);
     if (!allowed.includes(origin)) return respond({ error: "forbidden" }, 403);
+    
+const clientIP = request.headers.get("CF-Connecting-IP");
+if (!clientIP) {
+  return respond({ error: "client_ip_unavailable" }, 400);
+}
+
+const { success } = await env.CONTACT_RATE_LIMITER.limit({
+  key: clientIP
+});
+
+if (!success) {
+  return respond({ error: "rate_limited" }, 429);
+}
+
     if (!env.BREVO_API_KEY || !env.TURNSTILE_SECRET_KEY || !env.CONTACT_TO_EMAIL || !env.TURNSTILE_SITE_HOSTNAME) return respond({ error: "unavailable" }, 503);
     if (!request.headers.get("content-type")?.startsWith("application/json")) return respond({ error: "invalid_request" }, 415);
     if (Number(request.headers.get("content-length")) > MAX_BYTES) return respond({ error: "too_large" }, 413);
