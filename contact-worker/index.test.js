@@ -76,3 +76,17 @@ test("health endpoint reveals only readiness, not secrets", async () => {
   const unconfigured = await worker.fetch(new Request("https://worker.example/health"), {});
   assert.equal((await unconfigured.json()).configured, false);
 });
+
+test("rejects requests when rate limit is exceeded", async () => {
+  const limitedEnv = {
+    ...env,
+    CONTACT_RATE_LIMITER: {
+      limit: async () => ({ success: false })
+    }
+  };
+
+  const response = await worker.fetch(req(body), limitedEnv);
+
+  assert.equal(response.status, 429);
+  assert.deepEqual(await response.json(), { error: "rate_limited" });
+});
