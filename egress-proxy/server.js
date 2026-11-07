@@ -26,6 +26,7 @@ const IANA_SPECIAL_IPV4_PREFIXES = [
 const IANA_SPECIAL_IPV6_PREFIXES = [
   [ipaddr.parse("2001::"), 23],        // IETF protocol assignments
   [ipaddr.parse("64:ff9b::"), 96],     // NAT64 well-known prefix
+  [ipaddr.parse("2002::"), 16],        // 6to4 embeds an IPv4 endpoint; reject transition routing
 ];
 
 export class EgressError extends Error {
