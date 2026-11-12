@@ -108,8 +108,22 @@ let token = "";
     
     sitekey: CONTACT_TURNSTILE_SITE_KEY, action: "contact",
     callback: (value) => { token = value; document.getElementById("contactSubmit").disabled = false; },
-    "expired-callback": () => { token = ""; document.getElementById("contactSubmit").disabled = true; }
+  
+    "expired-callback": () => {
+      token = "";
+      document.getElementById("contactSubmit").disabled = true;
+    },
+    "error-callback": () => {
+      token = "";
+      document.getElementById("contactSubmit").disabled = true;
+    },
+    "timeout-callback": () => {
+      token = "";
+      document.getElementById("contactSubmit").disabled = true;
+    }
+      
   });
+
   contactForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!contactForm.reportValidity() || !token) return;
