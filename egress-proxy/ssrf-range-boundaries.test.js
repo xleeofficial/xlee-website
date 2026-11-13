@@ -16,9 +16,9 @@ const blocked = [
   ["64:ff9b::", 6],
   ["64:ff9b::ffff:ffff", 6],
   ["64:ff9b:1::", 6],
-  ["64:ff9b:1:ffff::1", 6],
+  ["64:ff9b:1:0:ffff::1", 6],
   ["3fff::", 6],
-  ["3fff:ffff::1", 6],
+  ["3fff:0fff::1", 6],
 ];
 
 test("special-use IPv4/IPv6 range boundaries remain blocked", () => {
