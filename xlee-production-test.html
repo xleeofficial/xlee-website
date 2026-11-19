@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <title>XLEE Contact — Production API Test</title>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,-apple-system,sans-serif}
+    body{background:#101423;color:#f4f3ff;max-width:620px;margin:5vh auto;padding:24px;line-height:1.7}
+    h1{font-size:1.5rem}p{color:#c4c6d3}form{display:grid;gap:14px}
+    label{display:grid;gap:4px}input,textarea{font:inherit;background:#1b2132;color:white;border:1px solid #566079;border-radius:8px;padding:10px;width:100%;box-sizing:border-box}
+    button{font:inherit;padding:12px;border:0;border-radius:8px;background:#a5adff;color:#101423;font-weight:700;cursor:pointer}
+    button:disabled{opacity:.5;cursor:not-allowed}#status{white-space:pre-wrap}a{color:#c7ceff}
+  </style>
+</head>
+<body>
+  <h1>XLEE — اختبار خدمة التواصل الإنتاجية</h1>
+  <p>صفحة اختبار مؤقتة لخدمة الإنتاج المستقلة. لا تغيّر موقع xlee.uk. استخدم بيانات اختبار فقط. يُسمح بعرضها على <strong>xlee-contact-preview.pages.dev</strong>؛ لن يعمل Turnstile عند فتح الملف محليًا.</p>
+  <form id="contactForm">
+    <label>الاسم<input name="name" minlength="2" maxlength="100" value="XLEE Test" required></label>
+    <label>البريد الإلكتروني<input name="email" type="email" maxlength="254" required placeholder="your-email@example.com"></label>
+    <label>الرسالة<textarea name="message" minlength="10" maxlength="3000" rows="4" required>Production endpoint end-to-end test</textarea></label>
+    <div id="turnstile"></div>
+    <button type="submit" id="send" disabled>إرسال رسالة اختبار واحدة</button>
+    <p role="status" aria-live="polite" id="status">جاري تحميل التحقق…</p>
+  </form>
+  <script>
+    (() => {
+      'use strict';
+      const EXPECTED_HOST = 'xlee-contact-preview.pages.dev';
+      const API = 'https://xlee-contact-production.temoswager.workers.dev/api/contact';
+      const SITE_KEY = '0x4AAAAAAF-lzdW-4xXHDo8Q';
+      const form = document.getElementById('contactForm');
+      const button = document.getElementById('send');
+      const status = document.getElementById('status');
+      let token = '';
+      let widgetId;
+      if (location.hostname !== EXPECTED_HOST) {
+        status.textContent = 'تم إيقاف الاختبار: يجب نشر هذه الصفحة على نطاق المعاينة المحدد فقط.';
+        return;
+      }
+      function init() {
+        if (!window.turnstile) { status.textContent = 'تعذر تحميل Turnstile. حدّث الصفحة.'; return; }
+        widgetId = window.turnstile.render('#turnstile', {
+          sitekey: SITE_KEY, action: 'contact',
+          callback: value => { token = value; button.disabled = false; status.textContent = 'التحقق جاهز. يمكنك إرسال رسالة اختبار واحدة.'; },
+          'expired-callback': () => { token=''; button.disabled=true; status.textContent='انتهت صلاحية التحقق.'; },
+          'error-callback': () => { token=''; button.disabled=true; status.textContent='تعذر التحقق. حاول تحديث الصفحة.'; },
+          'timeout-callback': () => { token=''; button.disabled=true; status.textContent='انتهت مهلة التحقق.'; }
+        });
+      }
+      window.addEventListener('load', init, {once:true});
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!form.reportValidity() || !token) return;
+        button.disabled = true;
+        status.textContent='جاري إرسال طلب الاختبار…';
+        try {
+          const response=await fetch(API,{
+            method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({name:form.elements.name.value,email:form.elements.email.value,message:form.elements.message.value,turnstileToken:token})
+          });
+          const result=await response.json().catch(()=>({}));
+          if(!response.ok) throw new Error('HTTP '+response.status+(result.error ? ' — '+result.error : ''));
+          status.textContent='تم قبول الطلب من خدمة الإنتاج (HTTP '+response.status+'). تحقق من وصول الرسالة إلى البريد ومن سجل Brevo؛ القبول لا يعني التسليم النهائي.';
+        } catch (error) {
+          status.textContent='فشل الطلب: '+error.message+'. لا تعِد الإرسال مباشرة قبل مراجعة سجل Brevo لتجنب التكرار.';
+        } finally {
+          token='';
+          if(window.turnstile && widgetId!==undefined) window.turnstile.reset(widgetId);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
