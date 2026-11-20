@@ -1,0 +1,152 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import worker from "./index.js";
+
+
+const env = {
+  BREVO_API_KEY: "test-only",
+  TURNSTILE_SECRET_KEY: "test-only",
+  CONTACT_TO_EMAIL: "inbox@example.com",
+  TURNSTILE_SITE_HOSTNAME: "xlee.uk",
+  CONTACT_ALLOWED_ORIGINS: "https://xlee.uk",
+  CONTACT_RATE_LIMITER: {
+    limit: async () => ({ success: true })
+  }
+};
+const endpoint = "https://worker.example/api/contact";
+const body = { name: "Tester", email: "tester@example.com", message: "Hello from XLEE test", turnstileToken: "mock-token" };
+const req = (data, origin = "https://xlee.uk") => new Request(endpoint, { method: "POST", headers: { origin, "content-type": "application/json", "CF-Connecting-IP": "192.0.2.10" }, body: JSON.stringify(data) });
+test("rejects untrusted origins before external requests", async () => {
+  const result = await worker.fetch(req(body, "https://evil.example"), env);
+  assert.equal(result.status, 403);
+});
+
+test("rejects invalid form input", async () => {
+  const result = await worker.fetch(req({ ...body, message: "short" }), env);
+  assert.equal(result.status, 400);
+});
+
+test("fails closed when secrets are absent", async () => {
+
+const result = await worker.fetch(req(body), { ...env, BREVO_API_KEY: undefined, TURNSTILE_SECRET_KEY: undefined });
+  assert.equal(result.status, 503);
+});
+
+test("preflight allows only approved origins", async () => {
+  const good = await worker.fetch(new Request(endpoint, { method: "OPTIONS", headers: { origin: "https://xlee.uk" } }), env);
+  assert.equal(good.status, 204);
+  assert.equal(good.headers.get("access-control-allow-origin"), "https://xlee.uk");
+  const bad = await worker.fetch(new Request(endpoint, { method: "OPTIONS", headers: { origin: "https://evil.example" } }), env);
+  assert.equal(bad.status, 403);
+});
+
+test("verifies Turnstile before sending and uses safe sender", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push({ url: String(url), options });
+    if (String(url).includes("siteverify")) return Response.json({ success: true, hostname: "xlee.uk", action: "contact" });
+    return Response.json({ messageId: "test-message" }, { status: 201 });
+  });
+  const result = await worker.fetch(req(body), env);
+  assert.equal(result.status, 200);
+  assert.equal(calls.length, 2);
+  const sent = JSON.parse(calls[1].options.body);
+  assert.equal(sent.sender.email, "xlee@xlee.uk");
+  assert.equal(sent.replyTo.email, body.email);
+  assert.equal(sent.to[0].email, env.CONTACT_TO_EMAIL);
+});
+
+test("blocks mismatched Turnstile hostname", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    calls.push(String(url));
+    return Response.json({ success: true, hostname: "evil.example", action: "contact" });
+  });
+  const result = await worker.fetch(req(body), env);
+  assert.equal(result.status, 403);
+  assert.equal(calls.length, 1);
+});
+
+test("health endpoint reveals only readiness, not secrets", async () => {
+  const response = await worker.fetch(new Request("https://worker.example/health"), env);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.deepEqual(payload, { status: "ok", configured: true });
+  assert.ok(!JSON.stringify(payload).includes("test-only"));
+  const unconfigured = await worker.fetch(new Request("https://worker.example/health"), {});
+  assert.equal((await unconfigured.json()).configured, false);
+});
+
+test("rejects requests when rate limit is exceeded", async () => {
+  const limitedEnv = {
+    ...env,
+    CONTACT_RATE_LIMITER: {
+      limit: async () => ({ success: false })
+    }
+  };
+
+  const response = await worker.fetch(req(body), limitedEnv);
+
+  assert.equal(response.status, 429);
+  assert.deepEqual(await response.json(), { error: "rate_limited" });
+});
+
+test("fails safely when rate limiter is unavailable", async () => {
+  const failingEnv = {
+    ...env,
+    CONTACT_RATE_LIMITER: {
+      limit: async () => {
+        throw new Error("Rate limiter unavailable");
+      }
+    }
+  };
+
+  const response = await worker.fetch(req(body), failingEnv);
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "unavailable" });
+});
+
+test("handles Turnstile timeout safely", async (t) => {
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.ok(String(url).includes("siteverify"));
+    assert.ok(options.signal instanceof AbortSignal);
+    throw new DOMException("Request timed out", "TimeoutError");
+  });
+
+  const response = await worker.fetch(req(body), env);
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    error: "unavailable"
+  });
+});
+
+test("handles Brevo timeout safely", async (t) => {
+  let calls = 0;
+
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls++;
+
+    if (String(url).includes("siteverify")) {
+      return Response.json({
+        success: true,
+        hostname: "xlee.uk",
+        action: "contact"
+      });
+    }
+
+    assert.ok(String(url).includes("api.brevo.com"));
+    assert.ok(options.signal instanceof AbortSignal);
+
+    throw new DOMException("Request timed out", "TimeoutError");
+  });
+
+  const response = await worker.fetch(req(body), env);
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    error: "unavailable"
+  });
+  assert.equal(calls, 2);
+});

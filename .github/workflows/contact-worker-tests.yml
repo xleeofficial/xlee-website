@@ -1,0 +1,36 @@
+name: XLEE Contact Worker Tests
+
+on:
+  push:
+    branches:
+      - feature/xlee-contact-brevo
+    paths:
+      - 'contact-worker/**'
+      - '.github/workflows/contact-worker-tests.yml'
+  pull_request:
+    paths:
+      - 'contact-worker/**'
+      - '.github/workflows/contact-worker-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: contact-worker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check syntax
+        run: node --check index.js && node --check index.test.js
+      - name: Run mocked unit tests
+        run: npm test
