@@ -95,11 +95,26 @@ try {
 
 // Contact form stays disabled until staging API and Turnstile are configured.
 // Configure these PUBLIC values only after backend review; never put secrets here.
-const CONTACT_API_URL = "https://xlee-contact-staging.temoswager.workers.dev/api/contact";
-const CONTACT_TURNSTILE_SITE_KEY = "0x4AAAAAAFrs1vW4ept7k2EN";
+
+const CONTACT_HOST = window.location.hostname;
+const CONTACT_IS_STAGING = CONTACT_HOST === "xlee-contact-preview.pages.dev";
+const CONTACT_IS_PRODUCTION = ["xlee.uk", "www.xlee.uk"].includes(CONTACT_HOST);
+
+const CONTACT_API_URL = CONTACT_IS_STAGING
+  ? "https://xlee-contact-staging.temoswager.workers.dev/api/contact"
+  : CONTACT_IS_PRODUCTION
+    ? "https://xlee-contact-production.temoswager.workers.dev/api/contact"
+    : "";
+
+const CONTACT_TURNSTILE_SITE_KEY = CONTACT_IS_STAGING
+  ? "0x4AAAAAAFrs1vW4ept7k2EN"
+  : CONTACT_IS_PRODUCTION
+    ? "0x4AAAAAAF-lzdW-4xXHDo8Q"
+    : "";
+
 const contactForm = document.getElementById("contactForm");
 function initializeContactForm() {
-  if (window.location.hostname !== "xlee-contact-preview.pages.dev") return;
+if (!CONTACT_IS_STAGING && !CONTACT_IS_PRODUCTION) return;  
   if (!contactForm || !CONTACT_API_URL || !CONTACT_TURNSTILE_SITE_KEY || !window.turnstile) return;
   
 let token = "";
