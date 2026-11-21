@@ -236,8 +236,12 @@ function send(res, status, body, extraHeaders = {}) {
   res.end(data);
 }
 
-export function createServer({ token = process.env.SAFE_FETCH_PROXY_TOKEN, resolver = dnsLookup, requestImpl, rateLimitMax = 60, rateLimitWindowMs = 60_000, rateLimitMaxEntries = 10_000 } = {}) {
+export function createServer({ token = process.env.SAFE_FETCH_PROXY_TOKEN, resolver = dnsLookup, requestImpl, rateLimitMax = 60, rateLimitWindowMs = 60_000, rateLimitMaxEntries = 10_000, maxConcurrentFetches = 20 } = {}) {
+  if (!Number.isInteger(maxConcurrentFetches) || maxConcurrentFetches < 1) {
+    throw new Error("Invalid concurrency limit configuration");
+  }
   const rateLimiter = createRateLimiter({ maxRequests: rateLimitMax, windowMs: rateLimitWindowMs, maxEntries: rateLimitMaxEntries });
+  let activeFetches = 0;
   const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: true, service: "xlee-lens-egress" });
     if (req.method !== "POST" || req.url !== "/fetch") return send(res, 404, { error: "not_found" });
@@ -250,6 +254,12 @@ export function createServer({ token = process.env.SAFE_FETCH_PROXY_TOKEN, resol
     if (!rate.allowed) return send(res, 429, { error: "rate_limited" }, { "retry-after": String(rate.retryAfter) });
     const contentType = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
     if (contentType !== "application/json") return send(res, 415, { error: "unsupported_media_type" });
+    // Bound in-flight upstream work per process. This is defense in depth only;
+    // a gateway/shared limiter is still required across replicas and isolates.
+    if (activeFetches >= maxConcurrentFetches) {
+      return send(res, 503, { error: "temporarily_unavailable" }, { "retry-after": "1" });
+    }
+    activeFetches++;
     const chunks = [];
     let total = 0;
     try {
@@ -280,6 +290,8 @@ export function createServer({ token = process.env.SAFE_FETCH_PROXY_TOKEN, resol
       const status = code === "invalid_url" || code === "invalid_hostname" || code === "blocked_hostname" ||
         code === "ip_literal_blocked" || code === "nonstandard_port" || code === "invalid_limits" ? 400 : 422;
       return send(res, status, { error: "fetch_failed", code });
+    } finally {
+      activeFetches--;
     }
   });
   server.headersTimeout = 5_000;

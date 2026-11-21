@@ -42,3 +42,23 @@ Do not enable the endpoint publicly until the trusted egress service is implemen
 ## Release gate
 
 A reviewer must record the egress implementation, test results, Cloudflare rule IDs/settings, quota limits, and rollback plan before approval. A passing checklist document is not a substitute for actually running the tests.
+
+## Evidence record — current status
+
+**Release decision: BLOCKED.** Passing CI is necessary but does not establish a safe deployed boundary. Do not configure the Worker to call the proxy or enable public scans until every required evidence item below is completed and reviewed.
+
+| Evidence item | Required proof | Current status |
+|---|---|---|
+| Automated regression suite | CI run for the exact reviewed commit; proxy and Worker suites green | Automated tests pass on the integration-test branch; re-check the final candidate commit before approval |
+| Built image | Immutable image digest and successful scan/test of that exact image | Local CI image build passes; image is not published and no immutable digest is recorded |
+| Worker-to-proxy HTTPS | Staging request over verified TLS, including certificate/hostname validation and failure cases | **Not tested against a deployed staging service** |
+| Network egress boundary | Infrastructure rule/policy evidence denying loopback, private, link-local, metadata, and control-plane destinations | **Not verified** |
+| Service identity and secret | Private service reachability or authenticated gateway/mTLS; secret stored outside source, least privilege, rotation procedure | **Not verified** |
+| Rate limiting and quotas | Enabled edge/gateway rule for POST /api/scan, durable per-client/session quotas, shared concurrency cap, and threshold-crossing test | **Local proxy rate/concurrency guards are tested; distributed quotas and edge rules are not configured or verified** |
+| Observability | Redacted logs, alert routing, dashboards, and a test alert; no tokens or sensitive URL query strings | **Not verified** |
+| Independent SSRF review | Reviewer identity, findings, fixes, and approval against the exact candidate commit/image | **Pending** |
+| Rollback | Named rollback procedure and a demonstrated way to disable public scans/revoke the proxy token | **Pending** |
+
+When completing this record, include links or identifiers for the actual staging deployment, network policy, edge rule, immutable image digest, test run, reviewer sign-off, and rollback evidence. Do not include secret values, customer data, or unredacted sensitive URLs.
+
+A status may be changed to PASS only when the corresponding evidence exists and was checked. A checklist entry, source-code comment, passing unit test, or successful image build alone is not evidence that a runtime control is active.

@@ -442,3 +442,50 @@ test("oversized request body receives a complete 413 JSON response", async () =>
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });
+
+test("caps concurrent upstream work and returns a retryable response when busy", async () => {
+  let fetchCalls = 0;
+  let releaseFirst;
+  let firstStartedResolve;
+  const holdFirst = new Promise((resolve) => { releaseFirst = resolve; });
+  const firstStarted = new Promise((resolve) => { firstStartedResolve = resolve; });
+  const server = createServer({
+    token: "test-secret",
+    maxConcurrentFetches: 1,
+    resolver: async () => [{ address: "8.8.8.8", family: 4 }],
+    requestImpl: async () => {
+      fetchCalls++;
+      firstStartedResolve();
+      await holdFirst;
+      return { status: 200, html: "<html>ok</html>" };
+    },
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const endpoint = `http://127.0.0.1:${server.address().port}/fetch`;
+  const options = {
+    method: "POST",
+    headers: { authorization: "Bearer test-secret", "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://public-example.com/" }),
+  };
+  try {
+    const firstPromise = fetch(endpoint, options);
+    await firstStarted;
+    const busy = await fetch(endpoint, options);
+    assert.equal(busy.status, 503);
+    assert.equal(busy.headers.get("retry-after"), "1");
+    assert.deepEqual(await busy.json(), { error: "temporarily_unavailable" });
+    assert.equal(fetchCalls, 1, "the busy request must not start another upstream fetch");
+
+    releaseFirst();
+    const first = await firstPromise;
+    assert.equal(first.status, 200);
+    assert.deepEqual(await first.json(), {
+      html: "<html>ok</html>",
+      finalUrl: "https://public-example.com/",
+      status: 200,
+    });
+  } finally {
+    releaseFirst();
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
